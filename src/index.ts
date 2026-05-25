@@ -33,3 +33,11 @@ app.listen(config.port, () => {
     `ibkr-gateway listening on :${config.port} (project=${config.projectId})`
   );
 });
+
+// Never let an async error in a request handler take the whole process down.
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("uncaughtException:", err);
+});

@@ -1,7 +1,7 @@
 // Console API. All routes require Firebase Auth (see auth.ts).
 // Mounted at /console/api in src/index.ts.
 
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { FieldValue } from "@google-cloud/firestore";
 import { requireFirebaseAuth } from "./auth.js";
 import {
@@ -277,3 +277,20 @@ function tsToIso(ts: unknown): string | null {
   if (ts instanceof Date) return ts.toISOString();
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Error handler: keeps the process alive on Firestore / Secret Manager errors.
+// Mounted LAST.
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+consoleApi.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const e = err as { message?: string; code?: number; details?: string };
+  // Surface useful detail without leaking credentials (none flow through here).
+  const status = typeof e.code === "number" && e.code >= 400 && e.code <= 599 ? e.code : 500;
+  console.error("console api error:", e.message ?? err, e.details ?? "");
+  res.status(status >= 400 && status < 600 ? status : 500).json({
+    error: e.message ?? "internal error",
+    detail: e.details,
+  });
+});

@@ -17,6 +17,7 @@ scan() {
   hits=$(grep -rEn --color=never -I \
     --exclude-dir=node_modules \
     --exclude-dir=.git \
+    --exclude-dir=.claude \
     --exclude-dir=dist \
     --exclude=package-lock.json \
     --exclude="$(basename "$0")" \
@@ -39,6 +40,7 @@ scan_with_exclude() {
   hits=$(grep -rEn --color=never -I \
     --exclude-dir=node_modules \
     --exclude-dir=.git \
+    --exclude-dir=.claude \
     --exclude-dir=dist \
     --exclude=package-lock.json \
     --exclude="$(basename "$0")" \
