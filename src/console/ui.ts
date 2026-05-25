@@ -392,11 +392,17 @@ function renderTestResult(div, data, ok) {
       '</div>';
   } else {
     const remediation = data.remediation ? '<pre style="white-space:pre-wrap; margin:8px 0 0; font-family: -apple-system, sans-serif; font-size: 13px;">' + escapeHtml(data.remediation) + '</pre>' : '';
+    const logs = data.logs
+      ? '<details style="margin-top: 8px"><summary class="muted" style="cursor:pointer">Container logs (last 120 lines)</summary>' +
+        '<pre style="white-space:pre-wrap; font-size: 11px; max-height: 320px; overflow:auto; margin: 8px 0 0; background: var(--bg); padding: 8px; border-radius: 4px;">' +
+        escapeHtml(data.logs) + '</pre></details>'
+      : '';
     panel.innerHTML =
       '<div class="card" style="background:rgba(211,84,84,0.08); border-color: var(--danger); margin-top: 12px">' +
       '<strong style="color:var(--danger)">✗ ' + escapeHtml(data.code || "ERROR") + '</strong><br>' +
       '<span>' + escapeHtml(data.error || "Test failed.") + '</span>' +
       remediation +
+      logs +
       '</div>';
   }
   // Insert the panel just below the connection head.

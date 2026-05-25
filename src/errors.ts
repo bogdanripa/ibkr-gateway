@@ -4,6 +4,8 @@
 // they MUST NOT contain credential values or other sensitive data.
 
 export class IbkrError extends Error {
+  public logs?: string;
+
   constructor(
     public readonly code: string,
     message: string,
@@ -14,11 +16,12 @@ export class IbkrError extends Error {
   }
 
   /** JSON shape returned by the API on this error. */
-  toResponse(): { error: string; code: string; remediation?: string } {
+  toResponse(): { error: string; code: string; remediation?: string; logs?: string } {
     return {
       error: this.message,
       code: this.code,
       ...(this.remediation ? { remediation: this.remediation } : {}),
+      ...(this.logs ? { logs: this.logs } : {}),
     };
   }
 }
@@ -108,6 +111,40 @@ export class CredentialRejectedError extends IbkrError {
       "CREDENTIAL_REJECTED",
       "IBKR rejected the stored credential.",
       CREDENTIAL_REJECTED_REMEDIATION
+    );
+  }
+}
+
+/**
+ * Generic spawn timeout — the container started but the session never
+ * reached authenticated == true within the deadline, AND we couldn't
+ * find a stronger signal in the IBeam logs to pin it on 2FA or a
+ * rejected password. Surfaces the log tail so the operator can see
+ * what's going on.
+ */
+export const SPAWN_TIMEOUT_REMEDIATION = `
+The IBeam container started but never reported an authenticated
+session within the timeout. Common causes:
+
+  - IBeam first-launch is slow on a small VM (cold Chromium boot).
+    Retry once; subsequent launches are faster.
+  - Outbound HTTPS from the VM to IBKR is blocked or rate-limited.
+  - IBeam version drift — check that voyz/ibeam:latest is current.
+  - For paper accounts: confirm the username starts with the paper
+    prefix IBKR assigned you, and that you've signed in to
+    https://www.interactivebrokers.com manually at least once to
+    clear any first-login prompts.
+
+The "logs" field below contains the last lines from the IBeam
+container — look for a clear error message there.
+`.trim();
+
+export class SpawnTimeoutError extends IbkrError {
+  constructor() {
+    super(
+      "SPAWN_TIMEOUT",
+      "Gateway spawn timed out without authenticating.",
+      SPAWN_TIMEOUT_REMEDIATION
     );
   }
 }

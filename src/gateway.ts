@@ -11,7 +11,11 @@
 import { spawn } from "node:child_process";
 import { config } from "./config.js";
 import { fetchCredential, type IbkrCredential } from "./secrets.js";
-import { TwoFactorRequiredError, CredentialRejectedError } from "./errors.js";
+import {
+  TwoFactorRequiredError,
+  CredentialRejectedError,
+  SpawnTimeoutError,
+} from "./errors.js";
 
 const CONTAINER_PREFIX = "ibkr-conn-";
 
@@ -45,12 +49,15 @@ export async function spawnGateway(
   // Best-effort: reap any stale container with the same name.
   await dockerRm(containerName).catch(() => undefined);
 
-  // Fetch credential, use it, drop it.
+  // Fetch credential. We hold the *password* until after waitForAuthenticated
+  // returns or throws, so we can strip it from container logs when we
+  // attach them to error responses.
   let cred: IbkrCredential | null = await fetchCredential(connectionId);
+  const password = cred.password;
   try {
     await dockerRunIBeam({ containerName, hostPort, cred });
   } finally {
-    cred = null; // hint to GC; the docker arg buffers are scoped to dockerRunIBeam.
+    cred = null; // GC the username/password copy; we keep `password` locally.
   }
 
   const handle: GatewayHandle = {
@@ -60,10 +67,20 @@ export async function spawnGateway(
     baseUrl: `https://127.0.0.1:${hostPort}`,
   };
 
-  // Wait for authenticated == true, or surface a friendly error.
-  await waitForAuthenticated(handle);
-
-  return handle;
+  try {
+    await waitForAuthenticated(handle);
+    return handle;
+  } catch (err) {
+    // Attach a redacted log tail for the operator. The container is still
+    // running at this point — capture before reapGateway kills it.
+    if (err instanceof TwoFactorRequiredError ||
+        err instanceof CredentialRejectedError ||
+        err instanceof SpawnTimeoutError) {
+      const logs = await captureContainerLogs(containerName, password).catch(() => "");
+      err.logs = logs;
+    }
+    throw err;
+  }
 }
 
 /** SIGKILL the container if running, then remove it. */
@@ -83,12 +100,11 @@ interface RunArgs {
 }
 
 async function dockerRunIBeam(args: RunArgs): Promise<void> {
-  // `docker run -d` returns the container id. We expose IBeam's port 5000
-  // ONLY on 127.0.0.1 — never on the public interface.
+  // No --rm: we want the container around after stop so we can fetch its
+  // logs for diagnostics. reapGateway() removes it explicitly.
   await runDocker([
     "run",
     "-d",
-    "--rm",
     "--name", args.containerName,
     "--restart=no",
     "-p", `127.0.0.1:${args.hostPort}:5000`,
@@ -100,6 +116,24 @@ async function dockerRunIBeam(args: RunArgs): Promise<void> {
 
 async function dockerRm(name: string): Promise<void> {
   await runDocker(["rm", "-f", name]);
+}
+
+/** Last ~120 lines of container stdout/stderr, with the IBKR password
+ *  redacted. Best-effort — returns "" on any docker error. */
+async function captureContainerLogs(name: string, password: string): Promise<string> {
+  let logs: string;
+  try {
+    logs = await runDocker(["logs", "--tail", "120", name]);
+  } catch {
+    return "";
+  }
+  // Redact the password if it ever appears verbatim. IBeam shouldn't log
+  // it, but belt-and-braces.
+  if (password) {
+    const escaped = password.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    logs = logs.replace(new RegExp(escaped, "g"), "<redacted-password>");
+  }
+  return logs;
 }
 
 function runDocker(args: string[]): Promise<string> {
@@ -161,27 +195,38 @@ async function waitForAuthenticated(handle: GatewayHandle): Promise<void> {
 
     // Explicit IBeam-reported login failure → credential rejected.
     if (lastStatus && looksRejected(lastStatus)) {
-      await reapGateway(handle.connectionId);
       throw new CredentialRejectedError();
     }
 
     await sleep(config.spawnProbeIntervalMs);
   }
 
-  // Timed out without authenticated. By far the most common cause is 2FA
-  // on the IBKR username (§9.1). Reap the container and surface the
-  // friendly remediation.
-  await reapGateway(handle.connectionId);
-  throw new TwoFactorRequiredError();
+  // Timed out. Don't blindly call it 2FA — only do so if the IBeam
+  // container actually logged a 2FA prompt. Otherwise it's a generic
+  // SpawnTimeout (slow boot, network, etc.) and the operator gets the
+  // log tail to diagnose.
+  const logs = await runDocker(["logs", "--tail", "200", handle.containerName]).catch(() => "");
+  if (looksLikeTwoFactor(logs)) throw new TwoFactorRequiredError();
+  if (looksLikeCredRejectInLogs(logs)) throw new CredentialRejectedError();
+  throw new SpawnTimeoutError();
 }
 
 function looksRejected(s: AuthStatus): boolean {
-  // IBeam surfaces auth failure via `fail` or via `connected: false +
-  // authenticated: false` with a specific message. Be conservative: only
-  // claim rejection on a clear signal, to avoid swallowing 2FA timeouts.
   if (s.fail && /password|invalid|reject/i.test(s.fail)) return true;
   if (s.message && /invalid (user|password|credential)/i.test(s.message)) return true;
   return false;
+}
+
+function looksLikeTwoFactor(logs: string): boolean {
+  // IBeam's log line when 2FA is required:
+  //   "Two-Factor Authentication request received..."
+  //   or "waiting for 2FA"
+  //   or "select the device" / IBKR Mobile push prompt
+  return /two[-\s]?factor|2fa|select the device|notif(?:ication)? from IBKR Mobile/i.test(logs);
+}
+
+function looksLikeCredRejectInLogs(logs: string): boolean {
+  return /invalid (?:user|password|credential)|password.*incorrect|account.*locked/i.test(logs);
 }
 
 // ---------------------------------------------------------------------------

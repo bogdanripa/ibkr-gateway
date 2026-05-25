@@ -25,9 +25,12 @@ const DEFAULTS = {
   passSel: '#xyz-field-password, input[name="password"]',
   // The two-step continue button (only present if password isn't shown yet):
   userSubmitSel: '.xyzblock-username-submit button, .xyzblock-username-submit input[type="submit"]',
-  // The final form submit:
+  // The final form submit. NB: the form element itself has class
+  // .xyzform-submit, so we must target a button inside it — not the
+  // form. Listed buttons first; if none match we fall back to pressing
+  // Enter in the password field.
   submitSel:
-    '.xyz-button-login, .xyzform-submit, button[type="submit"], input[type="submit"]',
+    '.xyz-button-login, form.xyzform-submit button[type="submit"], form.xyzform-submit input[type="submit"], button.xyz-button-login',
   successCookie: 'XYZAB_AM.LOGIN',
   timeoutMs: 60_000,
 };
@@ -80,6 +83,7 @@ export async function loginWithBrowser({
   password,
   headed = false,
   onProgress = () => {},
+  debugDir = process.env.IBKR_LOGIN_DEBUG_DIR,
 } = {}) {
   if (!username || !password) throw new Error('username and password required');
   const opts = envOpts();
@@ -128,7 +132,18 @@ export async function loginWithBrowser({
     await page.fill(opts.passSel, password);
 
     onProgress('submitting');
-    await page.locator(opts.submitSel).first().click();
+    let submitted = false;
+    const submitBtn = page.locator(opts.submitSel).first();
+    if (await submitBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      try {
+        await submitBtn.click({ timeout: 5000 });
+        submitted = true;
+      } catch { /* fall through to Enter */ }
+    }
+    if (!submitted) {
+      onProgress('no visible submit button — pressing Enter in password field');
+      await page.locator(opts.passSel).first().press('Enter');
+    }
 
     // Two terminal states we care about:
     //   (a) success → the success cookie appears in the context, OR
@@ -168,6 +183,18 @@ export async function loginWithBrowser({
     onProgress('login succeeded — extracting cookies');
     const all = await context.cookies();
     return normaliseCookies(all);
+  } catch (err) {
+    if (debugDir) {
+      try {
+        const { mkdir, writeFile } = await import('node:fs/promises');
+        await mkdir(debugDir, { recursive: true });
+        await page.screenshot({ path: `${debugDir}/page.png`, fullPage: true });
+        await writeFile(`${debugDir}/page.html`, await page.content());
+        await writeFile(`${debugDir}/url.txt`, page.url());
+        onProgress(`debug dump written to ${debugDir}/{page.png,page.html,url.txt}`);
+      } catch (e) { onProgress(`debug dump failed: ${e.message}`); }
+    }
+    throw err;
   } finally {
     await browser.close().catch(() => {});
   }

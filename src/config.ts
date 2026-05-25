@@ -15,8 +15,9 @@ export const config = {
   /** Host port range allocated to Gateway containers. */
   gatewayPortMin: Number(process.env.GATEWAY_PORT_MIN ?? 5001),
   gatewayPortMax: Number(process.env.GATEWAY_PORT_MAX ?? 5100),
-  /** Total time we wait for a fresh container to reach authenticated == true. */
-  spawnLoginTimeoutMs: Number(process.env.SPAWN_LOGIN_TIMEOUT_MS ?? 60_000),
+  /** Total time we wait for a fresh container to reach authenticated == true.
+   * IBeam first-boot includes a headless Chromium login dance — be generous. */
+  spawnLoginTimeoutMs: Number(process.env.SPAWN_LOGIN_TIMEOUT_MS ?? 120_000),
   /** Interval between auth-status probes during a spawn wait. */
   spawnProbeIntervalMs: Number(process.env.SPAWN_PROBE_INTERVAL_MS ?? 2_000),
   /** Keep-alive tickle interval (§7.2). */
