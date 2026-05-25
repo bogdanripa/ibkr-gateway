@@ -1,0 +1,31 @@
+[Unit]
+Description=IBKR Gateway broker (proxy + supervisor)
+Documentation=https://github.com/bogdanripa/ibkr-gateway
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ibkr-gateway
+EnvironmentFile=/etc/ibkr-gateway.env
+ExecStart=/usr/bin/npx tsx src/index.ts
+Restart=on-failure
+RestartSec=5
+
+# Hardening (modest; we need network + docker socket access).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+# Drop credentials from process arguments / environment in /proc.
+ProtectProc=invisible
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ibkr-gateway
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+rules_version = '2';
+
+// All writes/reads to the ibkr_* collections happen via the server SDK
+// (the proxy/onboarding backend, running as the ibkr-gateway service account).
+// Client SDKs must NEVER touch these collections directly.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /ibkr_accounts/{doc=**} {
+      allow read, write: if false;
+    }
+    match /ibkr_connections/{doc=**} {
+      allow read, write: if false;
+    }
+    match /ibkr_api_keys/{doc=**} {
+      allow read, write: if false;
+    }
+  }
+}

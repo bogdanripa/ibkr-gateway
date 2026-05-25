@@ -1,0 +1,106 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Required so the workflow can request an OIDC token for Workload Identity
+# Federation (no long-lived SA keys in GitHub secrets).
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: auto-trader-493814
+  GCP_ZONE: europe-west3-a
+  VM_NAME: ibkr-gateway
+  WIF_PROVIDER: projects/1023470996532/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEPLOYER_SA: ibkr-gateway-deployer@auto-trader-493814.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    name: deploy to ${{ vars.VM_NAME || 'ibkr-gateway' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Secret scan
+        run: bash scripts/scan-secrets.sh
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps (for typecheck)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build deploy tarball
+        run: |
+          tar --exclude='./node_modules' \
+              --exclude='./.git' \
+              --exclude='./dist' \
+              --exclude='./.github' \
+              --exclude='*.log' \
+              -czf /tmp/ibkr-gateway.tar.gz .
+          ls -lh /tmp/ibkr-gateway.tar.gz
+
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Copy tarball to VM (via IAP tunnel)
+        run: |
+          gcloud compute scp /tmp/ibkr-gateway.tar.gz \
+            "${VM_NAME}:/tmp/ibkr-gateway.tar.gz" \
+            --zone="$GCP_ZONE" \
+            --tunnel-through-iap \
+            --quiet
+
+      - name: Run deploy script on VM
+        run: |
+          gcloud compute ssh "$VM_NAME" \
+            --zone="$GCP_ZONE" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="bash -s" <<'REMOTE_EOF'
+          set -euo pipefail
+          # The tarball was just uploaded; extract just the deploy script
+          # to a known path and execute it. The script then handles the
+          # full deploy (it expects the tarball to still be at /tmp).
+          tmpdir=$(mktemp -d)
+          tar -xzf /tmp/ibkr-gateway.tar.gz -C "$tmpdir" deploy/deploy-on-vm.sh
+          chmod +x "$tmpdir/deploy/deploy-on-vm.sh"
+          GCP_PROJECT_ID=auto-trader-493814 "$tmpdir/deploy/deploy-on-vm.sh"
+          rm -rf "$tmpdir"
+          REMOTE_EOF
+
+      - name: Public health check
+        run: |
+          for i in 1 2 3 4 5; do
+            body=$(curl -fsS -m 10 "https://ibkr-gateway.bogdanripa.com/healthz" || echo "FAIL")
+            echo "attempt $i: $body"
+            if [[ "$body" == *"ok"* ]]; then exit 0; fi
+            sleep 3
+          done
+          echo "public healthcheck FAILED" >&2
+          exit 1

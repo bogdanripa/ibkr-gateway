@@ -1,0 +1,33 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# --- Environment files ---
+# .env.example IS committed; .env / .env.* are not.
+.env
+.env.*
+!.env.example
+
+# --- Credential material ---
+# Anything that looks like a cert or key, anywhere in the tree.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# GCP / Firebase service-account JSON keys.
+service-account*.json
+*-credentials.json
+gcp-key*.json
+firebase-adminsdk-*.json
+
+# Firebase CLI local state.
+.firebase/
+.firebaserc
+
+# Terraform local state, if we ever add it.
+*.tfstate
+*.tfstate.*
+.terraform/
