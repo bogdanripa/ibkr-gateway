@@ -1,0 +1,341 @@
+// Console SPA — single HTML page, Firebase JS SDK from CDN, vanilla JS.
+// Served from /console by src/index.ts.
+
+import { firebaseConfig } from "./firebase-config.js";
+
+export function consoleHtml(): string {
+  // The firebaseConfig is public (client-side config; see firebase-config.ts).
+  // Inlining it is safe and avoids an extra round trip.
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IBKR Gateway — Console</title>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --fg: #e6e7ea;
+    --muted: #888c94;
+    --card: #15171c;
+    --border: #2a2d35;
+    --accent: #5a8df0;
+    --danger: #d35454;
+    --warn: #d39654;
+    --ok: #4fb87a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 500; }
+  header .who { color: var(--muted); font-size: 13px; }
+  header .who button { margin-left: 8px; }
+  main { max-width: 880px; margin: 24px auto; padding: 0 24px; }
+  h2 { font-size: 14px; font-weight: 500; color: var(--muted); margin: 24px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .card.conn { padding: 0; }
+  .card.conn .conn-head { padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .card.conn .conn-body { padding: 0 16px 16px; border-top: 1px solid var(--border); }
+  .conn-title { font-weight: 500; }
+  .badge { display: inline-block; padding: 2px 8px; font-size: 12px; border-radius: 4px; background: #2a2d35; color: var(--muted); margin-left: 8px; }
+  .badge.ok { background: rgba(79,184,122,0.15); color: var(--ok); }
+  .badge.warn { background: rgba(211,150,84,0.15); color: var(--warn); }
+  .badge.bad { background: rgba(211,84,84,0.15); color: var(--danger); }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input, textarea {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+    width: 100%;
+  }
+  label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .raw-key { background: #2a2210; border: 1px solid var(--warn); padding: 12px; border-radius: 6px; margin: 12px 0; word-break: break-all; }
+  .raw-key strong { color: var(--warn); }
+  .muted { color: var(--muted); }
+  .signin { display: flex; justify-content: center; padding: 80px 0; }
+  .err { color: var(--danger); margin: 8px 0; white-space: pre-wrap; }
+  .empty { color: var(--muted); padding: 16px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>IBKR Gateway</h1>
+  <div class="who" id="who"></div>
+</header>
+
+<main id="app">
+  <div class="signin"><button id="signin-btn">Sign in with Google</button></div>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+const firebaseConfig = ${JSON.stringify(firebaseConfig, null, 2)};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+const $ = (sel) => document.querySelector(sel);
+const appEl = $("#app");
+const whoEl = $("#who");
+
+document.getElementById("signin-btn").addEventListener("click", () => signInWithPopup(auth, provider));
+
+let currentUser = null;
+let currentToken = null;
+
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+  if (!user) {
+    whoEl.textContent = "";
+    renderSignin();
+    return;
+  }
+  currentToken = await user.getIdToken();
+  whoEl.innerHTML = \`\${user.email} <button class="ghost" id="signout">sign out</button>\`;
+  document.getElementById("signout").addEventListener("click", () => signOut(auth));
+  renderApp();
+});
+
+async function api(method, path, body) {
+  const resp = await fetch("/console/api" + path, {
+    method,
+    headers: {
+      "Authorization": "Bearer " + currentToken,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(\`\${resp.status}: \${txt}\`);
+  }
+  return resp.json();
+}
+
+function renderSignin() {
+  appEl.innerHTML = '<div class="signin"><button id="signin-btn">Sign in with Google</button></div>';
+  document.getElementById("signin-btn").addEventListener("click", () => signInWithPopup(auth, provider));
+}
+
+async function renderApp() {
+  appEl.innerHTML = '<div class="muted">Loading…</div>';
+  try {
+    const me = await api("GET", "/me");
+    const { connections } = await api("GET", "/connections");
+    renderDashboard(me, connections);
+  } catch (err) {
+    appEl.innerHTML = '<div class="err">' + err.message + '</div>';
+  }
+}
+
+function badge(status) {
+  const cls = status === "valid" ? "ok" : status === "rejected" ? "bad" : "warn";
+  return \`<span class="badge \${cls}">\${status}</span>\`;
+}
+
+function renderDashboard(me, connections) {
+  appEl.innerHTML = \`
+    <h2>Your IBKR connections</h2>
+    <div id="conns"></div>
+
+    <h2>Add a connection</h2>
+    <div class="card">
+      <p class="muted" style="margin-top:0">
+        Use a 2FA-free secondary IBKR username. Your primary login keeps its
+        2FA. See SPEC §9.1 for the steps if you haven't created a secondary
+        username yet.
+      </p>
+      <label>Label (your reference)</label>
+      <input id="add-label" placeholder="paper account" />
+      <label>IBKR username</label>
+      <input id="add-username" autocomplete="off" />
+      <label>IBKR password</label>
+      <input id="add-password" type="password" autocomplete="new-password" />
+      <div style="margin-top:12px"><button id="add-btn">Create connection</button></div>
+      <div id="add-err" class="err"></div>
+    </div>
+  \`;
+
+  const list = document.getElementById("conns");
+  if (!connections.length) {
+    list.innerHTML = '<div class="empty">No connections yet.</div>';
+  } else {
+    list.innerHTML = "";
+    for (const c of connections) {
+      const div = document.createElement("div");
+      div.className = "card conn";
+      div.innerHTML = renderConnection(c);
+      list.appendChild(div);
+      wireConnection(div, c);
+    }
+  }
+
+  document.getElementById("add-btn").addEventListener("click", async () => {
+    const errEl = document.getElementById("add-err");
+    errEl.textContent = "";
+    const body = {
+      label: document.getElementById("add-label").value || null,
+      ibkr_username: document.getElementById("add-username").value,
+      ibkr_password: document.getElementById("add-password").value,
+    };
+    if (!body.ibkr_username || !body.ibkr_password) {
+      errEl.textContent = "username and password are required";
+      return;
+    }
+    try {
+      await api("POST", "/connections", body);
+      await renderApp();
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  });
+}
+
+function renderConnection(c) {
+  return \`
+    <div class="conn-head">
+      <div>
+        <span class="conn-title">\${escapeHtml(c.label || "(no label)")}</span>
+        \${badge(c.credential_status)}
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="ghost" data-act="rotate">rotate creds</button>
+        <button class="danger" data-act="delete">delete</button>
+      </div>
+    </div>
+    <div class="conn-body">
+      <div class="muted" style="margin-top:8px">
+        id: <code>\${c.id}</code>
+        \${c.ibkr_account_id ? "· account: <code>" + escapeHtml(c.ibkr_account_id) + "</code>" : ""}
+      </div>
+      <h2 style="margin-top:16px">API keys</h2>
+      <div data-keys></div>
+      <button data-act="new-key" style="margin-top:8px">+ New API key</button>
+    </div>
+  \`;
+}
+
+function wireConnection(div, c) {
+  loadKeys(div, c.id);
+
+  div.querySelector('[data-act="delete"]').addEventListener("click", async () => {
+    if (!confirm("Delete this connection? This destroys the stored credentials and revokes all API keys.")) return;
+    await api("DELETE", "/connections/" + c.id);
+    await renderApp();
+  });
+
+  div.querySelector('[data-act="rotate"]').addEventListener("click", async () => {
+    const username = prompt("IBKR username:");
+    if (!username) return;
+    const password = prompt("IBKR password:");
+    if (!password) return;
+    try {
+      await api("PUT", "/connections/" + c.id + "/credentials", { ibkr_username: username, ibkr_password: password });
+      alert("Credentials rotated.");
+      await renderApp();
+    } catch (err) {
+      alert("Rotation failed: " + err.message);
+    }
+  });
+
+  div.querySelector('[data-act="new-key"]').addEventListener("click", async () => {
+    const label = prompt("Label for this key (optional):") || null;
+    try {
+      const k = await api("POST", "/connections/" + c.id + "/api-keys", { label });
+      const note = document.createElement("div");
+      note.className = "raw-key";
+      note.innerHTML = '<strong>Copy this key now — it will not be shown again:</strong><br>' +
+        '<code>' + escapeHtml(k.raw_key) + '</code>';
+      div.querySelector(".conn-body").prepend(note);
+      await loadKeys(div, c.id);
+    } catch (err) {
+      alert("Could not create key: " + err.message);
+    }
+  });
+}
+
+async function loadKeys(div, connId) {
+  const container = div.querySelector("[data-keys]");
+  container.innerHTML = '<div class="muted">Loading…</div>';
+  const { api_keys } = await api("GET", "/connections/" + connId + "/api-keys");
+  if (!api_keys.length) {
+    container.innerHTML = '<div class="muted">No keys yet.</div>';
+    return;
+  }
+  container.innerHTML = \`
+    <table>
+      <thead><tr><th>Label</th><th>Prefix</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+      <tbody>
+        \${api_keys.map((k) => \`
+          <tr>
+            <td>\${escapeHtml(k.label || "")}</td>
+            <td><code>ibkr_\${escapeHtml(k.key_prefix)}…</code></td>
+            <td class="muted">\${k.created_at ? new Date(k.created_at).toLocaleString() : ""}</td>
+            <td class="muted">\${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "never"}</td>
+            <td>\${k.revoked_at
+              ? '<span class="badge bad">revoked</span>'
+              : '<button class="ghost" data-revoke="' + k.id + '">revoke</button>'}</td>
+          </tr>
+        \`).join("")}
+      </tbody>
+    </table>
+  \`;
+  container.querySelectorAll("[data-revoke]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Revoke this API key? This is immediate and irreversible.")) return;
+      await api("DELETE", "/api-keys/" + btn.dataset.revoke);
+      await loadKeys(div, connId);
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+</script>
+</body>
+</html>`;
+}

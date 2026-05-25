@@ -29,9 +29,35 @@ scan() {
   fi
 }
 
+# Like scan(), but skips a single given path. Use for known-public values
+# (e.g. the Firebase web apiKey, which is a client identifier per Firebase).
+scan_with_exclude() {
+  local pattern="$1"
+  local label="$2"
+  local exclude_path="$3"
+  local hits
+  hits=$(grep -rEn --color=never -I \
+    --exclude-dir=node_modules \
+    --exclude-dir=.git \
+    --exclude-dir=dist \
+    --exclude=package-lock.json \
+    --exclude="$(basename "$0")" \
+    -e "$pattern" . 2>/dev/null \
+    | grep -v "^${exclude_path}:" || true)
+  if [[ -n "$hits" ]]; then
+    echo ""
+    echo "!! Found possible secret ($label):"
+    echo "$hits"
+    EXIT=1
+  fi
+}
+
 scan 'BEGIN (RSA |EC )?PRIVATE KEY' 'PEM private key'
 scan 'BEGIN CERTIFICATE' 'PEM certificate'
-scan 'AIzaSy[A-Za-z0-9_-]{30,}' 'Google API key (apiKey-like)'
+# The Firebase web apiKey is a public client identifier (see
+# src/console/firebase-config.ts). Exclude that one file from this rule.
+scan_with_exclude 'AIzaSy[A-Za-z0-9_-]{30,}' 'Google API key (apiKey-like)' \
+  './src/console/firebase-config.ts'
 scan 'ibkr_[A-Za-z0-9_-]{20,}' 'IBKR Gateway API key (our format)'
 scan '"private_key_id":\s*"[A-Fa-f0-9]+"' 'GCP service-account JSON'
 scan 'xox[abprs]-[A-Za-z0-9-]{10,}' 'Slack token'

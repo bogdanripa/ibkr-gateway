@@ -84,11 +84,10 @@ jobs:
             --quiet \
             --command="bash -s" <<'REMOTE_EOF'
           set -euo pipefail
-          # The tarball was just uploaded; extract just the deploy script
-          # to a known path and execute it. The script then handles the
-          # full deploy (it expects the tarball to still be at /tmp).
+          # Pull just the deploy script out of the tarball and run it.
+          # The script consumes the tarball from /tmp itself.
           tmpdir=$(mktemp -d)
-          tar -xzf /tmp/ibkr-gateway.tar.gz -C "$tmpdir" deploy/deploy-on-vm.sh
+          tar -xzf /tmp/ibkr-gateway.tar.gz -C "$tmpdir" ./deploy/deploy-on-vm.sh
           chmod +x "$tmpdir/deploy/deploy-on-vm.sh"
           GCP_PROJECT_ID=auto-trader-493814 "$tmpdir/deploy/deploy-on-vm.sh"
           rm -rf "$tmpdir"

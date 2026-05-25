@@ -1,19 +1,34 @@
-// Entry point. v1 placeholder — wires up an Express app that serves
-// /healthz on PORT (8080 by default). Caddy reverse-proxies HTTPS to here.
+// Entry point. v1 wires up the Express app:
+//   /console/api/*   — Firebase-authenticated console backend (api.ts)
+//   /console         — single-page UI (ui.ts)
+//   /healthz         — already served by Caddy ahead of us, but kept here
+//                      for direct localhost checks
 //
-// The proxy + supervisor (§4) will be layered on top of this in later steps.
+// Trading API endpoints (/v1/*) will be layered on in §11 step 7 once the
+// Supervisor is in place.
 
 import express from "express";
 import { config } from "./config.js";
+import { consoleApi } from "./console/api.js";
+import { consoleHtml } from "./console/ui.js";
 
 const app = express();
+app.disable("x-powered-by");
 
+// Console API.
+app.use("/console/api", consoleApi);
+
+// Console UI: serve the single HTML on / and on /console*.
+app.get(["/", "/console", "/console/*splat"], (_req, res) => {
+  res.type("html").send(consoleHtml());
+});
+
+// Local healthcheck (Caddy serves the public one).
 app.get("/healthz", (_req, res) => {
   res.type("text").send("ibkr-gateway: app ok\n");
 });
 
 app.listen(config.port, () => {
-  // Don't log credentials — ever. This logs only port + project id.
   console.log(
     `ibkr-gateway listening on :${config.port} (project=${config.projectId})`
   );
