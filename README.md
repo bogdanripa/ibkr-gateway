@@ -284,12 +284,15 @@ To keep the repo clean and portable:
   them from `process.env`.
 - Local dev: copy `.env.example` to `.env` and fill in the six
   `FIREBASE_*` values from Firebase Console → Project Settings.
-- CI/deploy: set them as GitHub repo **Variables** (Settings → Secrets
-  and variables → Actions → **Variables** tab — *not* Secrets):
+- CI/deploy: set them as GitHub repo **Secrets** (Settings → Secrets
+  and variables → Actions → **Secrets** tab):
   `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`,
   `FIREBASE_STORAGE_BUCKET`, `FIREBASE_MESSAGING_SENDER_ID`,
-  `FIREBASE_APP_ID`. The deploy workflow passes them through to the VM,
-  which writes them into `/etc/ibkr-gateway.env`.
+  `FIREBASE_APP_ID`. The deploy workflow reads them from `secrets.*`
+  and writes them into `/etc/ibkr-gateway.env` on the VM. They're
+  treated as Secrets (redacted in logs) even though Firebase's docs
+  classify the apiKey as public — the redaction is harmless and keeps
+  the values out of build logs.
 
 If a previous commit ever leaked the key into source, **rotate it** in
 Firebase Console (Project Settings → General → reset the web app's
