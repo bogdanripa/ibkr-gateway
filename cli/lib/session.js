@@ -24,6 +24,16 @@ export function emptySession() {
     userName: null,
     deviceId: null,
     tstToken: null,
+    // API host + path-prefix routing. Determined at login time by the
+    // post-login URL (paper accounts land on ndcdyn /
+    // interactivebrokers.com hosts using /portal.proxy/v1/portal/...;
+    // live accounts on api.ibkr.com using /v1/api/...).
+    apiBase: null,        // e.g. "https://ndcdyn.interactivebrokers.com"
+    portalPrefix: null,   // e.g. "/portal.proxy/v1/portal" or "/v1/api"
+    // Account-state flags pulled from sso/validate so consumers can
+    // explain a missing portfolio without having to re-call validate.
+    isPendingApplicant: null, // bool — IBKR application not yet approved
+    paperUserName: null,      // populated for paper logins
     updatedAt: null,
   };
 }

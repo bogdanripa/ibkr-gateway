@@ -10,7 +10,7 @@
 
 import { exit } from 'node:process';
 import { loadSession, saveSession, sessionPath } from './lib/session.js';
-import { api } from './lib/api.js';
+import { api, portalUrl } from './lib/api.js';
 import { tickle } from './lib/auth.js';
 
 function pad(s, n, right = false) {
@@ -51,7 +51,12 @@ try { await tickle(session); } catch (e) {
   exit(1);
 }
 
-const accountsRes = await api.get(session, '/v1/api/portfolio/accounts');
+if (session.isPendingApplicant) {
+  console.error('⚠  Account is in PENDING-APPLICATION state — IBKR has no portfolio');
+  console.error('   data for it yet. Listed account(s) below for reference only.\n');
+}
+
+const accountsRes = await api.get(session, portalUrl(session, 'portfolio/accounts'));
 if (accountsRes.status !== 200) {
   console.error(`/portfolio/accounts → HTTP ${accountsRes.status}: ${accountsRes.text.slice(0, 200)}`);
   exit(1);
@@ -66,12 +71,24 @@ for (const acct of accounts) {
   const id = acct.accountId || acct.id || acct.account;
   console.log(`\n══ Account ${id}  (${acct.accountTitle || acct.displayName || ''})`);
 
+  // Accounts in pending-application state have brokerageAccess:false
+  // and IBKR returns HTTP 500 for /portfolio/{id}/positions etc. Skip
+  // the data fetch and explain the situation instead of looking broken.
+  if (acct.brokerageAccess === false) {
+    console.log('  (brokerageAccess: false — no portfolio data available.');
+    console.log('   IBKR Application Status is still "In Progress" for this account;');
+    console.log('   positions / cash will appear once the application is approved.)');
+    continue;
+  }
+
   // Positions, paginated 30/page.
   const positions = [];
+  let positionsFatal = false;
   for (let page = 0; page < 50; page++) {
-    const res = await api.get(session, `/v1/api/portfolio/${encodeURIComponent(id)}/positions/${page}`);
+    const res = await api.get(session, portalUrl(session, `portfolio/${encodeURIComponent(id)}/positions/${page}`));
     if (res.status !== 200) {
       console.error(`positions page ${page} → HTTP ${res.status}: ${res.text.slice(0, 200)}`);
+      positionsFatal = true;
       break;
     }
     const list = Array.isArray(res.data) ? res.data : [];
@@ -79,6 +96,7 @@ for (const acct of accounts) {
     positions.push(...list);
     if (list.length < 30) break;
   }
+  if (positionsFatal && !positions.length) continue;
 
   const byClass = positions.reduce((acc, p) => {
     const k = p.assetClass || 'OTHER';
@@ -114,7 +132,7 @@ for (const acct of accounts) {
   }
 
   // Cash ledger.
-  const ledgerRes = await api.get(session, `/v1/api/portfolio/${encodeURIComponent(id)}/ledger`);
+  const ledgerRes = await api.get(session, portalUrl(session, `portfolio/${encodeURIComponent(id)}/ledger`));
   if (ledgerRes.status === 200 && ledgerRes.data && typeof ledgerRes.data === 'object') {
     const cashRows = Object.entries(ledgerRes.data)
       .filter(([k]) => k !== 'BASE' || true) // include BASE; user can read it

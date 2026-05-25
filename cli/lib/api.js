@@ -4,8 +4,31 @@
 import { request } from 'undici';
 import { saveSession } from './session.js';
 
-export const BASE = 'https://api.ibkr.com';
+// Defaults — used when the session hasn't been pinned to a host yet
+// (i.e. before login finishes). Live accounts end up on api.ibkr.com
+// under /v1/api; paper accounts on *.interactivebrokers.com under
+// /portal.proxy/v1/portal.
+export const DEFAULT_BASE = 'https://api.ibkr.com';
+export const DEFAULT_PORTAL_PREFIX = '/v1/api';
 export const USER_AGENT = 'ClientPortalGW/1';
+
+// Build a full URL from a portal-relative path like "sso/validate?gw=1"
+// or "iserver/auth/status", using the host + path-prefix pinned on the
+// session (set by lib/login.js after observing the post-login URL).
+export function portalUrl(session, relPath) {
+  const base = session?.apiBase || DEFAULT_BASE;
+  const prefix = session?.portalPrefix || DEFAULT_PORTAL_PREFIX;
+  const tail = relPath.startsWith('/') ? relPath : '/' + relPath;
+  return base + prefix + tail;
+}
+
+// Host-relative URL (no portalPrefix). Used for /sso/* endpoints that
+// live at the host root.
+export function hostUrl(session, relPath) {
+  const base = session?.apiBase || DEFAULT_BASE;
+  const tail = relPath.startsWith('/') ? relPath : '/' + relPath;
+  return base + tail;
+}
 
 function parseSetCookie(line) {
   // Set-Cookie: name=value; Path=/; Secure; HttpOnly; ...
@@ -53,7 +76,9 @@ export function cookieHeader(session, urlPath) {
 }
 
 async function call(session, method, url, { body, contentType, headers = {} } = {}) {
-  const u = url.startsWith('http') ? new URL(url) : new URL(BASE + url);
+  const u = url.startsWith('http')
+    ? new URL(url)
+    : new URL((session?.apiBase || DEFAULT_BASE) + url);
   const cookies = cookieHeader(session, u.pathname);
   const reqHeaders = {
     'User-Agent': USER_AGENT,
