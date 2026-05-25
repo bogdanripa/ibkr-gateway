@@ -240,6 +240,7 @@ function renderConnection(c) {
         \${badge(c.credential_status)}
       </div>
       <div class="row" style="gap:8px">
+        <button data-act="test">Test</button>
         <button class="ghost" data-act="rotate">rotate creds</button>
         <button class="danger" data-act="delete">delete</button>
       </div>
@@ -258,6 +259,30 @@ function renderConnection(c) {
 
 function wireConnection(div, c) {
   loadKeys(div, c.id);
+
+  div.querySelector('[data-act="test"]').addEventListener("click", async () => {
+    const btn = div.querySelector('[data-act="test"]');
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Testing… (up to 60s)";
+    // Clear any prior result panel.
+    div.querySelectorAll(".test-result").forEach((n) => n.remove());
+    try {
+      const resp = await fetch("/console/api/connections/" + c.id + "/test", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + currentToken },
+      });
+      const data = await resp.json();
+      renderTestResult(div, data, resp.ok);
+      // Refresh the badge in place (without wiping the result panel).
+      updateConnectionBadge(div, resp.ok ? "valid" : "rejected");
+    } catch (err) {
+      renderTestResult(div, { error: err.message }, false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  });
 
   div.querySelector('[data-act="delete"]').addEventListener("click", async () => {
     if (!confirm("Delete this connection? This destroys the stored credentials and revokes all API keys.")) return;
@@ -328,6 +353,42 @@ async function loadKeys(div, connId) {
       await loadKeys(div, connId);
     });
   });
+}
+
+function updateConnectionBadge(div, status) {
+  const head = div.querySelector(".conn-head > div:first-child");
+  if (!head) return;
+  const old = head.querySelector(".badge");
+  if (old) old.remove();
+  const span = document.createElement("span");
+  const cls = status === "valid" ? "ok" : status === "rejected" ? "bad" : "warn";
+  span.className = "badge " + cls;
+  span.textContent = status;
+  head.appendChild(span);
+}
+
+function renderTestResult(div, data, ok) {
+  const panel = document.createElement("div");
+  panel.className = "test-result";
+  if (ok) {
+    const accounts = (data.ibkr_accounts || []).map(escapeHtml).join(", ") || "(none returned)";
+    panel.innerHTML =
+      '<div class="card" style="background:rgba(79,184,122,0.08); border-color: var(--ok); margin-top: 12px">' +
+      '<strong style="color:var(--ok)">✓ Authenticated.</strong><br>' +
+      '<span class="muted">IBKR account(s): ' + accounts + '</span>' +
+      '</div>';
+  } else {
+    const remediation = data.remediation ? '<pre style="white-space:pre-wrap; margin:8px 0 0; font-family: -apple-system, sans-serif; font-size: 13px;">' + escapeHtml(data.remediation) + '</pre>' : '';
+    panel.innerHTML =
+      '<div class="card" style="background:rgba(211,84,84,0.08); border-color: var(--danger); margin-top: 12px">' +
+      '<strong style="color:var(--danger)">✗ ' + escapeHtml(data.code || "ERROR") + '</strong><br>' +
+      '<span>' + escapeHtml(data.error || "Test failed.") + '</span>' +
+      remediation +
+      '</div>';
+  }
+  // Insert the panel just below the connection head.
+  const body = div.querySelector(".conn-body");
+  body.prepend(panel);
 }
 
 function escapeHtml(s) {

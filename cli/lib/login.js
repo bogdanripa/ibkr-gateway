@@ -15,11 +15,19 @@
 //   IBKR_LOGIN_SUCCESS_COOKIE (default: XYZAB_AM.LOGIN)
 //   IBKR_LOGIN_TIMEOUT_MS     (default: 60000)
 
+// Selectors as of 2026 — extracted from /sso/lib/xyz.bundle.min.js (the
+// IBKR "xyz" login SPA). The form may be one step (username +
+// password visible together) or two-step (username first, then
+// password). The driver handles both.
 const DEFAULTS = {
   url: 'https://www.interactivebrokers.com/sso/Login?forwardTo=22&RL=1&ip2loc=US',
-  userSel: 'input[name="user_name"]',
-  passSel: 'input[name="password"]',
-  submitSel: 'input[type="submit"], button[type="submit"]',
+  userSel: '#xyz-field-username, input[name="username"]',
+  passSel: '#xyz-field-password, input[name="password"]',
+  // The two-step continue button (only present if password isn't shown yet):
+  userSubmitSel: '.xyzblock-username-submit button, .xyzblock-username-submit input[type="submit"]',
+  // The final form submit:
+  submitSel:
+    '.xyz-button-login, .xyzform-submit, button[type="submit"], input[type="submit"]',
   successCookie: 'XYZAB_AM.LOGIN',
   timeoutMs: 60_000,
 };
@@ -29,6 +37,7 @@ function envOpts() {
     url: process.env.IBKR_LOGIN_URL || DEFAULTS.url,
     userSel: process.env.IBKR_LOGIN_USER_SEL || DEFAULTS.userSel,
     passSel: process.env.IBKR_LOGIN_PASS_SEL || DEFAULTS.passSel,
+    userSubmitSel: process.env.IBKR_LOGIN_USER_SUBMIT_SEL || DEFAULTS.userSubmitSel,
     submitSel: process.env.IBKR_LOGIN_SUBMIT_SEL || DEFAULTS.submitSel,
     successCookie: process.env.IBKR_LOGIN_SUCCESS_COOKIE || DEFAULTS.successCookie,
     timeoutMs: Number(process.env.IBKR_LOGIN_TIMEOUT_MS) || DEFAULTS.timeoutMs,
@@ -90,17 +99,36 @@ export async function loginWithBrowser({
     await page.goto(opts.url, { waitUntil: 'domcontentloaded', timeout: opts.timeoutMs });
 
     onProgress(`waiting for login form (${opts.userSel})`);
-    await page.waitForSelector(opts.userSel, { timeout: opts.timeoutMs });
+    // The form is rendered by xyz.bundle.min.js into .loginformWrapper —
+    // there are no inputs in the initial HTML. We rely on Playwright's
+    // built-in JS execution + waitForSelector to bridge that.
+    await page.waitForSelector(opts.userSel, { timeout: opts.timeoutMs, state: 'visible' });
 
-    onProgress('filling credentials');
+    onProgress('filling username');
     await page.fill(opts.userSel, username);
+
+    // Detect the two-step form: if the password field isn't visible yet,
+    // click the "Continue" / username-submit button first.
+    const passVisible = await page
+      .locator(opts.passSel)
+      .first()
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+    if (!passVisible) {
+      const userSubmit = page.locator(opts.userSubmitSel).first();
+      if (await userSubmit.isVisible({ timeout: 500 }).catch(() => false)) {
+        onProgress('two-step form: clicking Continue');
+        await userSubmit.click();
+      }
+      onProgress('waiting for password field');
+      await page.waitForSelector(opts.passSel, { timeout: opts.timeoutMs, state: 'visible' });
+    }
+
+    onProgress('filling password');
     await page.fill(opts.passSel, password);
 
     onProgress('submitting');
-    await Promise.all([
-      page.waitForLoadState('domcontentloaded', { timeout: opts.timeoutMs }).catch(() => {}),
-      page.click(opts.submitSel),
-    ]);
+    await page.locator(opts.submitSel).first().click();
 
     // Two terminal states we care about:
     //   (a) success → the success cookie appears in the context, OR

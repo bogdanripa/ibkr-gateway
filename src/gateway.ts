@@ -197,6 +197,30 @@ async function fetchInsecure(url: string): Promise<Response> {
   return fetch(url, { dispatcher });
 }
 
+/**
+ * Fetch the list of IBKR account ids associated with this session.
+ * Used after a successful spawn to capture the user's IBKR account id
+ * onto the Firestore document.
+ *
+ * Returns null on any failure — the caller treats account id as optional.
+ */
+export async function fetchPortfolioAccountIds(
+  handle: GatewayHandle
+): Promise<string[] | null> {
+  try {
+    const resp = await fetchInsecure(`${handle.baseUrl}/v1/api/portfolio/accounts`);
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as Array<{ id?: string; accountId?: string }>;
+    if (!Array.isArray(body)) return null;
+    const ids = body
+      .map((a) => a.id ?? a.accountId)
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+    return ids.length ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
