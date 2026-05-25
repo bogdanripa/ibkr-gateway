@@ -55,15 +55,28 @@ export function consoleHtml(): string {
   button {
     background: var(--accent);
     color: white;
-    border: none;
-    padding: 8px 14px;
+    border: 1px solid transparent;
+    padding: 6px 12px;
     border-radius: 6px;
     font: inherit;
+    line-height: 1.2;
     cursor: pointer;
+    white-space: nowrap;
   }
-  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  button.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
   button.danger { background: var(--danger); }
-  button:disabled { opacity: 0.5; cursor: default; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    vertical-align: -2px;
+    margin-right: 6px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   input, textarea {
     background: var(--bg);
     color: var(--fg);
@@ -262,9 +275,9 @@ function wireConnection(div, c) {
 
   div.querySelector('[data-act="test"]').addEventListener("click", async () => {
     const btn = div.querySelector('[data-act="test"]');
-    const prev = btn.textContent;
+    const prevHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.textContent = "Testing… (up to 60s)";
+    btn.innerHTML = '<span class="spinner"></span>Testing…';
     // Clear any prior result panel.
     div.querySelectorAll(".test-result").forEach((n) => n.remove());
     try {
@@ -280,7 +293,7 @@ function wireConnection(div, c) {
       renderTestResult(div, { error: err.message }, false);
     } finally {
       btn.disabled = false;
-      btn.textContent = prev;
+      btn.innerHTML = prevHtml;
     }
   });
 
