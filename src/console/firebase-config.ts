@@ -1,18 +1,30 @@
-// Firebase web app config (CLIENT-SIDE, PUBLIC).
+// Firebase web app config. Values are read from environment variables —
+// they are NOT committed to source control. Per Firebase's docs the
+// `apiKey` is a public client identifier, but committing it anyway
+// triggers automated secret scanners and locks the repo to a single
+// Firebase project; both are avoidable.
 //
-// Per Firebase's own documentation, the apiKey here is NOT a secret —
-// it's a client identifier. Access control is enforced by Firebase Auth
-// rules, Firestore rules, and our backend's ID-token verification.
-// See: https://firebase.google.com/docs/projects/api-keys
+// Local dev: copy .env.example to .env and fill in the values from
+// Firebase Console → Project Settings → Your apps → Web app.
 //
-// This file is intentionally NOT excluded by .gitignore. Our secret scan
-// (scripts/scan-secrets.sh) is configured to allow this specific path.
+// VM: /etc/ibkr-gateway.env (managed by deploy/deploy-on-vm.sh).
+
+function need(name: string): string {
+  const v = process.env[name];
+  if (!v) {
+    throw new Error(
+      `Missing Firebase env var: ${name}. ` +
+      `See .env.example and Firebase Console → Project Settings.`
+    );
+  }
+  return v;
+}
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyDnc8EstQh9p4CjF1K94ch_vsditwm0HYg",
-  authDomain: "auto-trader-493814.firebaseapp.com",
-  projectId: "auto-trader-493814",
-  storageBucket: "auto-trader-493814.firebasestorage.app",
-  messagingSenderId: "1023470996532",
-  appId: "1:1023470996532:web:19284035208b472baa8e61",
+  apiKey: need("FIREBASE_API_KEY"),
+  authDomain: need("FIREBASE_AUTH_DOMAIN"),
+  projectId: need("FIREBASE_PROJECT_ID"),
+  storageBucket: need("FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: need("FIREBASE_MESSAGING_SENDER_ID"),
+  appId: need("FIREBASE_APP_ID"),
 } as const;

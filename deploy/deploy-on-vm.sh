@@ -57,16 +57,21 @@ sudo mv "$NEW_DIR" "$APP_DIR"
 # 4. Systemd unit + env file.
 sudo install -m 0644 "$APP_DIR/deploy/ibkr-gateway.service" "/etc/systemd/system/${SVC}.service"
 
-if [[ ! -f /etc/ibkr-gateway.env ]]; then
-  log "first-time deploy: writing /etc/ibkr-gateway.env"
-  sudo tee /etc/ibkr-gateway.env >/dev/null <<EOF
+# Always (re)write /etc/ibkr-gateway.env. The deploy workflow is the source
+# of truth for Firebase values — if a workflow run passes new ones in, they
+# win. Treat the file as ephemeral, populated from the workflow env.
+log "writing /etc/ibkr-gateway.env"
+sudo tee /etc/ibkr-gateway.env >/dev/null <<EOF
 GCP_PROJECT_ID=${GCP_PROJECT_ID:-auto-trader-493814}
 PORT=8080
+FIREBASE_API_KEY=${FIREBASE_API_KEY:-}
+FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-}
+FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET:-}
+FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID:-}
+FIREBASE_APP_ID=${FIREBASE_APP_ID:-}
 EOF
-  sudo chmod 600 /etc/ibkr-gateway.env
-else
-  log "/etc/ibkr-gateway.env exists; preserving"
-fi
+sudo chmod 600 /etc/ibkr-gateway.env
 
 # 5. Restart.
 sudo systemctl daemon-reload

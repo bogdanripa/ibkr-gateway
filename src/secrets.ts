@@ -40,7 +40,11 @@ export async function createCredential(
     secretId: secretName,
     secret: {
       replication: { automatic: {} },
-      labels: { app: "ibkr-gateway", connection: connectionId },
+      // Secret Manager label VALUES must match [\p{Ll}\p{Lo}\p{N}_-]{0,63}
+      // — lowercase letters, digits, _, -. Firestore doc ids include
+      // uppercase, so we don't put the connection id here; the secret
+      // NAME already contains it.
+      labels: { app: "ibkr-gateway" },
     },
   });
 

@@ -20,6 +20,7 @@ scan() {
     --exclude-dir=.claude \
     --exclude-dir=dist \
     --exclude=package-lock.json \
+    --exclude='.env' \
     --exclude="$(basename "$0")" \
     -e "$pattern" . 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
@@ -43,6 +44,7 @@ scan_with_exclude() {
     --exclude-dir=.claude \
     --exclude-dir=dist \
     --exclude=package-lock.json \
+    --exclude='.env' \
     --exclude="$(basename "$0")" \
     -e "$pattern" . 2>/dev/null \
     | grep -v "^${exclude_path}:" || true)

@@ -274,6 +274,28 @@ cp .env.example .env
 For now the app is run from source on the VM via `npm run start` /
 `tsx`. A Dockerised deploy will follow.
 
+### Firebase config — out of source code
+
+The Firebase web app `apiKey` is a public client identifier per
+Firebase's own docs, but GitHub's secret scanner flags it on sight.
+To keep the repo clean and portable:
+
+- The values are NOT in source. `src/console/firebase-config.ts` reads
+  them from `process.env`.
+- Local dev: copy `.env.example` to `.env` and fill in the six
+  `FIREBASE_*` values from Firebase Console → Project Settings.
+- CI/deploy: set them as GitHub repo **Variables** (Settings → Secrets
+  and variables → Actions → **Variables** tab — *not* Secrets):
+  `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`,
+  `FIREBASE_STORAGE_BUCKET`, `FIREBASE_MESSAGING_SENDER_ID`,
+  `FIREBASE_APP_ID`. The deploy workflow passes them through to the VM,
+  which writes them into `/etc/ibkr-gateway.env`.
+
+If a previous commit ever leaked the key into source, **rotate it** in
+Firebase Console (Project Settings → General → reset the web app's
+config). The leaked value becomes invalid; the new one lives only in
+GitHub Variables + the VM's env file.
+
 ---
 
 ## Local development
@@ -302,12 +324,26 @@ npm run scan              # secret scan over working tree
 Useful scripts:
 
 ```bash
+# --- run locally before pushing ---
+npm test                                  # typecheck + scan + smoke + smoke:http
+npm run smoke                             # Firestore queries + Secret Manager round-trip
+npm run smoke:http                        # boots the app on :8082 and curls key endpoints
+npm run typecheck
+npm run scan                              # secret scan over working tree
+
+# --- one-off operational scripts ---
 npm run seed                              # create one account + connection + API key
 npm run upload-credential <connectionId>  # write IBKR creds to Secret Manager
 npm run test:secrets                      # round-trip Secret Manager + no-log assertion
 npm run test:gateway <connectionId>       # full spawn → auth-status, with friendly errors
 npm run reap <connectionId>               # tear down the gateway container
 ```
+
+`npm test` writes throwaway documents (and one secret) to the real
+Firestore/Secret Manager under tags like `smoke-<random>` and cleans
+them up at the end. It exercises the exact queries the production
+console uses, so missing composite indexes / IAM gaps fail locally
+instead of at deploy time.
 
 `upload-credential` and `test:gateway` must run *on the VM* (because IBeam
 runs in Docker on the VM, and the VM has its service account attached).

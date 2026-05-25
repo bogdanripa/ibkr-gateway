@@ -47,6 +47,30 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The smoke tests need GCP creds + Firebase env vars. They run
+      # AFTER the WIF auth step below, so this step is just typecheck/
+      # scan for now; the real test gate runs on the VM after deploy.
+
+      - name: Assert Firebase vars are configured
+        run: |
+          missing=0
+          for k in FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_STORAGE_BUCKET FIREBASE_MESSAGING_SENDER_ID FIREBASE_APP_ID; do
+            v="${!k:-}"
+            if [[ -z "$v" ]]; then
+              echo "::error::Missing GitHub repo Variable: $k"
+              echo "  Set in: Settings → Secrets and variables → Actions → Variables tab"
+              missing=1
+            fi
+          done
+          if [[ $missing -eq 1 ]]; then exit 1; fi
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+
       - name: Build deploy tarball
         run: |
           tar --exclude='./node_modules' \
@@ -77,20 +101,36 @@ jobs:
             --quiet
 
       - name: Run deploy script on VM
+        env:
+          # Firebase web config — public but kept out of source code so
+          # GitHub's secret scanner doesn't flag the repo. Configure as
+          # GitHub repo Variables (Settings → Secrets and variables →
+          # Actions → Variables tab).
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
         run: |
           gcloud compute ssh "$VM_NAME" \
             --zone="$GCP_ZONE" \
             --tunnel-through-iap \
             --quiet \
-            --command="bash -s" <<'REMOTE_EOF'
+            --command="bash -s" <<REMOTE_EOF
           set -euo pipefail
-          # Pull just the deploy script out of the tarball and run it.
-          # The script consumes the tarball from /tmp itself.
-          tmpdir=$(mktemp -d)
-          tar -xzf /tmp/ibkr-gateway.tar.gz -C "$tmpdir" ./deploy/deploy-on-vm.sh
-          chmod +x "$tmpdir/deploy/deploy-on-vm.sh"
-          GCP_PROJECT_ID=auto-trader-493814 "$tmpdir/deploy/deploy-on-vm.sh"
-          rm -rf "$tmpdir"
+          tmpdir=\$(mktemp -d)
+          tar -xzf /tmp/ibkr-gateway.tar.gz -C "\$tmpdir" ./deploy/deploy-on-vm.sh
+          chmod +x "\$tmpdir/deploy/deploy-on-vm.sh"
+          export GCP_PROJECT_ID=auto-trader-493814
+          export FIREBASE_API_KEY='${FIREBASE_API_KEY}'
+          export FIREBASE_AUTH_DOMAIN='${FIREBASE_AUTH_DOMAIN}'
+          export FIREBASE_PROJECT_ID='${FIREBASE_PROJECT_ID}'
+          export FIREBASE_STORAGE_BUCKET='${FIREBASE_STORAGE_BUCKET}'
+          export FIREBASE_MESSAGING_SENDER_ID='${FIREBASE_MESSAGING_SENDER_ID}'
+          export FIREBASE_APP_ID='${FIREBASE_APP_ID}'
+          "\$tmpdir/deploy/deploy-on-vm.sh"
+          rm -rf "\$tmpdir"
           REMOTE_EOF
 
       - name: Public health check
