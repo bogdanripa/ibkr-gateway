@@ -42,20 +42,35 @@ export function ask(question) {
   });
 }
 
-// Masked password — bypasses the shared readline because it needs
-// raw-mode keystroke access. Falls back to plaintext on non-TTY.
+// Masked password.
+//
+// Subtle: a readline interface with terminal=true installs its own
+// keypress decoder that echoes characters. Just pausing it isn't
+// enough — the keypress handler keeps writing each char to stdout
+// while we'd also be writing a `*`, giving "a*b*c*…" output. So we
+// fully tear the readline down for the duration of the password and
+// recreate it lazily on the next ask().
+//
+// Falls back to plaintext on non-TTY (CI / piped input).
 export function askPassword(question) {
   return new Promise((resolve, reject) => {
     if (!stdin.isTTY) return ask(question).then(resolve, reject);
-    const sharedRl = _rl;
-    if (sharedRl) sharedRl.pause();
+
+    if (_rl) {
+      _rl.close();
+      _rl = null;
+      _closed = false;     // ensure ensureRl() creates a fresh one next time
+    }
+
     stdout.write(question);
-    stdin.setRawMode(true); stdin.resume(); stdin.setEncoding('utf8');
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
     let buf = '';
     const cleanup = () => {
       stdin.setRawMode(false);
       stdin.removeListener('data', onData);
-      if (sharedRl) sharedRl.resume();
+      stdin.pause();
     };
     const onData = (ch) => {
       if (ch === '') { cleanup(); stdout.write('\n'); reject(new Error('cancelled')); return; }

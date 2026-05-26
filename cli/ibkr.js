@@ -142,22 +142,21 @@ async function bootstrap() {
 
 // ----- positions ------------------------------------------------------
 
-async function showPositions(client) {
-  const accountId = await safe(() => client._resolveAccountId());
-  if (!accountId) return;
+async function showPortfolio(client) {
   await safe(async () => {
+    const accountId = await client._resolveAccountId();
     const data = await client.getPositions(accountId);
     console.log(`\n══ Account ${data.accountId}`);
-    if (data.brokerageAccess === false) {
-      console.log('  (brokerageAccess: false — no portfolio data available.');
-      console.log('   IBKR Application Status is still "In Progress" for this account.)');
-      return;
-    }
     printTable('Stocks', data.stocks, STOCK_COLS);
     printTable('Options', data.options, OPT_COLS);
     for (const [k, rows] of Object.entries(data.other)) printTable(k, rows, STOCK_COLS);
     printTable('Cash (ledger)',
       data.cash.filter((r) => Number(r.cash) || Number(r.netLiq)), CASH_COLS);
+    if (data.errors.positions) console.log(`\n  · positions endpoint: ${data.errors.positions}`);
+    if (data.errors.cash) console.log(`  · cash endpoint: ${data.errors.cash}`);
+    if (!data.stocks.length && !data.options.length && !data.cash.length && !Object.keys(data.errors).length) {
+      console.log('  (account has no positions and no cash entries.)');
+    }
   });
 }
 
@@ -245,6 +244,87 @@ async function placeOrder(client) {
   });
 }
 
+// ----- quote ----------------------------------------------------------
+
+function fmtPrice(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtSigned(n, suffix = '') {
+  if (n == null || Number.isNaN(n)) return '—';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${suffix}`;
+}
+
+async function pickSecurity(client) {
+  const q = (await ask('Ticker or company name: ')).trim();
+  if (!q) return null;
+  let list = [];
+  try { list = await client.searchSecurity(q); }
+  catch (e) { console.log(`✗ ${e.message}`); return null; }
+  // Try by-name search as a fallback if the symbol search came up
+  // empty (common when user typed a company name like "Apple").
+  if (!list.length) {
+    try { list = await client.searchSecurity(q, { name: true }); }
+    catch { /* swallow */ }
+  }
+  if (!list.length) { console.log('(no matches)'); return null; }
+  if (list.length === 1) return list[0];
+
+  console.log('');
+  const shown = list.slice(0, 20);
+  shown.forEach((r, i) => {
+    const sectypes = [...new Set((r.sections || []).map((s) => s.secType))].filter(Boolean).join(',');
+    const sym = (r.symbol || '?').padEnd(8);
+    const desc = (r.description || '').padEnd(40);
+    console.log(`  ${String(i + 1).padStart(2)}. ${sym} ${desc} ${sectypes}`);
+  });
+  if (list.length > shown.length) console.log(`  (… and ${list.length - shown.length} more)`);
+  const pick = await ask('Pick number (or Enter to cancel): ');
+  if (!pick) return null;
+  const idx = Number(pick) - 1;
+  if (Number.isNaN(idx) || idx < 0 || idx >= list.length) { console.log('invalid choice'); return null; }
+  return list[idx];
+}
+
+async function showQuote(client) {
+  await safe(async () => {
+    await client.ensureBrokerage(); // marketdata needs the iserver tier up
+    const sec = await pickSecurity(client);
+    if (!sec) return;
+    console.log(`\n── ${sec.symbol}  ${sec.description}  (conid ${sec.conid}) ──`);
+
+    const snap = await client.getQuote(sec.conid);
+    const pad2 = (s, n) => String(s).padEnd(n);
+    console.log(`  ${pad2('Last',  10)} ${fmtPrice(snap.last)}` +
+      (Number.isFinite(snap.changeAbs) || Number.isFinite(snap.changePct)
+        ? `   (${fmtSigned(snap.changeAbs)}, ${fmtSigned(snap.changePct, '%')})`
+        : ''));
+    console.log(`  ${pad2('Bid',   10)} ${fmtPrice(snap.bid)}${Number.isFinite(snap.bidSize) ? `   x${snap.bidSize}` : ''}`);
+    console.log(`  ${pad2('Ask',   10)} ${fmtPrice(snap.ask)}${Number.isFinite(snap.askSize) ? `   x${snap.askSize}` : ''}`);
+    console.log(`  ${pad2('Day H/L', 10)} ${fmtPrice(snap.dayHigh)} / ${fmtPrice(snap.dayLow)}`);
+    console.log(`  ${pad2('52w H/L', 10)} ${fmtPrice(snap.week52High)} / ${fmtPrice(snap.week52Low)}`);
+    if (snap.volume != null) console.log(`  ${pad2('Volume', 10)} ${snap.volume}`);
+
+    // Period-over-period changes.
+    console.log(`\n  Change`);
+    for (const [label, period, bar] of [
+      ['1 day  ',  '1d',  '5min'],
+      ['1 week ',  '1w',  '1h'],
+      ['1 month',  '1m',  '1d'],
+      ['1 year ',  '1y',  '1d'],
+    ]) {
+      try {
+        const ch = await client.getChange(sec.conid, { period, bar });
+        if (!ch) { console.log(`    ${label}  —`); continue; }
+        console.log(`    ${label}  ${fmtPrice(ch.first)} → ${fmtPrice(ch.last)}   ${fmtSigned(ch.abs)}  ${fmtSigned(ch.pct, '%')}`);
+      } catch (e) {
+        console.log(`    ${label}  (${e.message})`);
+      }
+    }
+  });
+}
+
 async function ordersMenu(client) {
   for (;;) {
     const c = await menu('Orders', [
@@ -252,15 +332,15 @@ async function ordersMenu(client) {
       { key: '2', label: 'Place new order' },
       { key: '3', label: 'Check order status' },
       { key: '4', label: 'Cancel order' },
-      { key: '9', label: 'Back' },
+      { key: '0', label: 'Back' },
     ]);
     if (c === '1') await listOrders(client);
     else if (c === '2') await placeOrder(client);
     else if (c === '3') await orderStatus(client);
     else if (c === '4') await cancelOrder(client);
-    else if (c === '9' || c === '') return;
+    else if (c === '0' || c === '') return;
     else console.log(`(unknown choice '${c}')`);
-    await saveState(client.getState()); // persist any cache/ensureBrokerage state changes
+    await saveState(client.getState());
   }
 }
 
@@ -305,12 +385,12 @@ async function accountsMenu(client) {
       { key: '1', label: 'List accounts' },
       { key: '2', label: 'Set current account' },
       { key: '3', label: 'Unset current account' },
-      { key: '9', label: 'Back' },
+      { key: '0', label: 'Back' },
     ]);
     if (c === '1') await listAccounts(client);
     else if (c === '2') await setCurrentAccount(client);
     else if (c === '3') { client.unsetCurrentAccount(); console.log('cleared'); }
-    else if (c === '9' || c === '') return;
+    else if (c === '0' || c === '') return;
     else console.log(`(unknown choice '${c}')`);
     await saveState(client.getState());
   }
@@ -322,22 +402,24 @@ async function mainMenu(client) {
   for (;;) {
     const title = `Main (user=${client.getState().userName || '?'}, account=${client.getCurrentAccount() || '(none)'})`;
     const c = await menu(title, [
-      { key: '1', label: 'Positions' },
+      { key: '1', label: 'Portfolio' },
       { key: '2', label: 'Orders' },
       { key: '3', label: 'Accounts' },
-      { key: '4', label: 'Sign out (forget saved session)' },
-      { key: '9', label: 'Exit' },
+      { key: '4', label: 'Quote' },
+      { key: '5', label: 'Sign out (forget saved session)' },
+      { key: '0', label: 'Exit' },
     ]);
-    if (c === '1') await showPositions(client);
+    if (c === '1') await showPortfolio(client);
     else if (c === '2') await ordersMenu(client);
     else if (c === '3') await accountsMenu(client);
-    else if (c === '4') {
+    else if (c === '4') await showQuote(client);
+    else if (c === '5') {
       await client.signOut().catch(() => {});
       await clearState();
       console.log('signed out');
       return;
     }
-    else if (c === '9' || c === '') return;
+    else if (c === '0' || c === '') return;
     else console.log(`(unknown choice '${c}')`);
     await saveState(client.getState());
   }
