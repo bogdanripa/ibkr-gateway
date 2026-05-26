@@ -232,6 +232,11 @@ interface ToolDef {
    * Hidden from tools/list and rejected on tools/call when the caller
    * holds a read-only OAuth scope. Legacy API keys are always write. */
   mutating?: boolean;
+  /** For tools whose handler returns an array (or scalar), the key to
+   * wrap that under for `structuredContent` — which the MCP spec
+   * requires to be an object. e.g. searchSecurity → { results: [...] }.
+   * Ignored when the handler already returns an object. */
+  structuredKey?: string;
 }
 
 const TOOLS: Record<string, ToolDef> = {
@@ -239,6 +244,7 @@ const TOOLS: Record<string, ToolDef> = {
     description: "List every IBKR sub-account on the connection.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: async (_a, c) => c.getAccounts(),
+    structuredKey: "accounts",
   },
   get_current_account: {
     description: "Get the implicit account id used when an account-scoped tool is called without one.",
@@ -276,6 +282,7 @@ const TOOLS: Record<string, ToolDef> = {
       additionalProperties: false,
     },
     handler: async (a, c) => c.getCash(a.account_id ? String(a.account_id) : undefined),
+    structuredKey: "cash",
   },
 
   search_security: {
@@ -291,6 +298,7 @@ const TOOLS: Record<string, ToolDef> = {
     },
     handler: async (a, c) => c.searchSecurity(String(a.query), { name: !!a.by_name }),
     needsBrokerage: true,
+    structuredKey: "results",
   },
   get_quote: {
     description: "Snapshot quote (last, bid, ask, day H/L, 52w H/L) for a single contract.",
@@ -359,6 +367,7 @@ const TOOLS: Record<string, ToolDef> = {
     },
     handler: async (a, c) => c.getOrders({ status: a.status as string | string[] | undefined }),
     needsBrokerage: true,
+    structuredKey: "orders",
   },
   get_order_status: {
     description: "Detailed status of a single order (by orderId).",
@@ -406,6 +415,7 @@ const TOOLS: Record<string, ToolDef> = {
     }),
     needsBrokerage: true,
     mutating: true,
+    structuredKey: "orders",
   },
   cancel_order: {
     description: "Cancel a working order by id.",
@@ -427,12 +437,11 @@ const TOOLS: Record<string, ToolDef> = {
   },
 };
 
-function toStructuredContent(result: unknown): Record<string, unknown> | null {
+function toStructuredContent(result: unknown, key?: string): Record<string, unknown> | null {
   if (result == null) return null;
-  if (Array.isArray(result)) return { value: result };
+  if (Array.isArray(result)) return { [key ?? "value"]: result };
   if (typeof result === "object") return result as Record<string, unknown>;
-  // Scalars (string / number / boolean) — wrap so the shape is a dict.
-  return { value: result };
+  return { [key ?? "value"]: result };
 }
 
 function listToolDescriptors(scope: "read" | "write") {
@@ -471,7 +480,7 @@ async function callTool(
     // returns an array or scalar (e.g. search_security → array of hits),
     // wrap it under `{ value }` so the shape is always an object.
     const text = result == null ? "ok" : JSON.stringify(result, null, 2);
-    const structured = toStructuredContent(result);
+    const structured = toStructuredContent(result, tool.structuredKey);
     return {
       content: [{ type: "text" as const, text }],
       ...(structured ? { structuredContent: structured } : {}),
