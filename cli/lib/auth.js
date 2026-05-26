@@ -100,6 +100,24 @@ export async function tickle(session) {
   return expect200('tickle', await api.get(session, portalUrl(session, 'tickle')));
 }
 
+// Idempotently bring the iserver brokerage tier up. Safe to call any
+// time before an action that needs it (order placement, secdef/search,
+// iserver/accounts, etc.). The bridge naturally drops after some idle
+// period; this re-runs the SSODH handshake to bring it back.
+export async function ensureBrokerage(session, { force = false } = {}) {
+  if (!force) {
+    const status = expect200(
+      'iserver/auth/status',
+      await api.get(session, portalUrl(session, 'iserver/auth/status')),
+    );
+    if (status.authenticated && status.connected && status.competing === false) return status;
+  }
+  // We need userName + K. Both come from validate + ssodh/st.
+  if (!session.userName) await validateSso(session);
+  await fetchK(session);
+  return brokerageAuthenticate(session);
+}
+
 // One-shot: assumes the web cookies (XYZAB etc.) are already in session.
 // Runs the post-login pipeline and persists.
 //
