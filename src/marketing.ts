@@ -194,6 +194,7 @@ export function marketingHeaderHtml(): string {
     <a href="/help/mcp">Connect Claude (MCP)</a>
     <a href="/help/paper-account">Paper accounts</a>
     <a href="/help/authenticator-app">Live setup</a>
+    <a href="/contact">Contact</a>
     <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>
     <a class="cta" href="/console">Sign in</a>
   </nav>
