@@ -1039,7 +1039,8 @@ async function runTest(div, c, emailCode = null) {
 
     // 202 + EMAIL_VERIFICATION_REQUIRED → ask the user, then retry.
     if (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
-      const code = await promptEmailVerificationCode(c);
+      const result = await promptEmailVerificationCode(c);
+      const code = result && typeof result === "object" ? result.code : null;
       if (!code) {
         renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
         return;
@@ -1095,7 +1096,9 @@ async function promptEmailVerificationCode(c) {
       onClick: async (m) => {
         const code = m.querySelector("#ev-code").value.trim();
         if (!/^\\d{4,8}$/.test(code)) return "Code must be 4–8 digits.";
-        return code; // resolve with the raw code; outer logic retries Test.
+        // Wrap in an object — the modal helper treats raw string
+        // returns as inline error messages.
+        return { code };
       },
     },
     secondary: { label: "Cancel" },
