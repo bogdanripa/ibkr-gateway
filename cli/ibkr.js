@@ -392,22 +392,32 @@ async function showQuote(client) {
     await client.ensureBrokerage(); // marketdata needs the iserver tier up
     const sec = await pickSecurity(client);
     if (!sec) return;
-    console.log(`\n── ${sec.symbol}  ${sec.description}  (conid ${sec.conid}) ──`);
+    // /iserver/secdef/search doesn't return currency / listing exchange
+    // — pull them from /iserver/secdef/info. Best-effort; falls back to
+    // what we already have on `sec`.
+    let info = {};
+    try { info = await client.getSecurityInfo(sec.conid); } catch { /* ignore */ }
+    const ccy = info.currency || sec.currency || '';
+    const exch = info.listingExchange || '';
+    const header = [sec.symbol, sec.description, exch && `[${exch}${ccy ? `, ${ccy}` : ''}]`]
+      .filter(Boolean).join('  ');
+    console.log(`\n── ${header}  (conid ${sec.conid}) ──`);
 
     const snap = await client.getQuote(sec.conid);
     const pad2 = (s, n) => String(s).padEnd(n);
-    console.log(`  ${pad2('Last',  10)} ${fmtPrice(snap.last)}` +
+    const px = (n) => fmtPrice(n) + (Number.isFinite(n) && ccy ? ` ${ccy}` : '');
+    console.log(`  ${pad2('Last',  10)} ${px(snap.last)}` +
       (Number.isFinite(snap.changeAbs) || Number.isFinite(snap.changePct)
         ? `   (${fmtSigned(snap.changeAbs)}, ${fmtSigned(snap.changePct, '%')})`
         : ''));
-    console.log(`  ${pad2('Bid',   10)} ${fmtPrice(snap.bid)}${Number.isFinite(snap.bidSize) ? `   x${snap.bidSize}` : ''}`);
-    console.log(`  ${pad2('Ask',   10)} ${fmtPrice(snap.ask)}${Number.isFinite(snap.askSize) ? `   x${snap.askSize}` : ''}`);
-    console.log(`  ${pad2('Day H/L', 10)} ${fmtPrice(snap.dayHigh)} / ${fmtPrice(snap.dayLow)}`);
-    console.log(`  ${pad2('52w H/L', 10)} ${fmtPrice(snap.week52High)} / ${fmtPrice(snap.week52Low)}`);
+    console.log(`  ${pad2('Bid',   10)} ${px(snap.bid)}${Number.isFinite(snap.bidSize) ? `   x${snap.bidSize}` : ''}`);
+    console.log(`  ${pad2('Ask',   10)} ${px(snap.ask)}${Number.isFinite(snap.askSize) ? `   x${snap.askSize}` : ''}`);
+    console.log(`  ${pad2('Day H/L', 10)} ${px(snap.dayHigh)} / ${px(snap.dayLow)}`);
+    console.log(`  ${pad2('52w H/L', 10)} ${px(snap.week52High)} / ${px(snap.week52Low)}`);
     if (snap.volume != null) console.log(`  ${pad2('Volume', 10)} ${snap.volume}`);
 
-    // Period-over-period changes.
-    console.log(`\n  Change`);
+    // Period-over-period changes (close-to-close).
+    console.log(`\n  Change${ccy ? ` (${ccy})` : ''}`);
     for (const [label, period, bar] of [
       ['1 day  ',  '1d',  '5min'],
       ['1 week ',  '1w',  '1h'],
