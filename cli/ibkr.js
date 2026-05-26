@@ -90,13 +90,29 @@ async function promptSignIn(client) {
   const password = await askPassword('Password: ');
   if (!password) throw new Error('password required');
 
-  const headed = await yesNo('Open browser visibly (needed for IBKey 2FA push)?');
+  // Live mode requires the IBKR Authenticator-App secret so we can
+  // generate the 6-digit code locally and complete 2FA unattended.
+  // Paper accounts don't have 2FA. See:
+  //   https://ibkr-gateway.bogdanripa.com/help/authenticator-app
+  let totpSecret = null;
+  let headed = false;
+  if (mode === 'live') {
+    console.log('');
+    console.log('  Live accounts must have IBKR\'s "Authenticator App" 2FA enabled.');
+    console.log('  Paste the activation code (base32 secret) IBKR showed you when');
+    console.log('  you enrolled. Not the 6-digit code — the secret.');
+    console.log('  Help: https://ibkr-gateway.bogdanripa.com/help/authenticator-app');
+    totpSecret = (await askPassword('Activation code: ')).replace(/\s+/g, '');
+    if (!totpSecret) throw new Error('activation code required for live mode');
+  } else {
+    headed = await yesNo('Open browser visibly (debugging only)?');
+  }
 
   const p = new Progress();
   let result;
   try {
     result = await client.signIn({
-      username, password, mode, headed,
+      username, password, mode, headed, totpSecret,
       onProgress: (m) => p.step(m),
     });
   } catch (e) {

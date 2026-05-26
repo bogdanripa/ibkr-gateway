@@ -13,6 +13,7 @@ import { config } from "./config.js";
 import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
 import { paperAccountHtml } from "./help/paper-account.js";
+import { authenticatorAppHtml } from "./help/authenticator-app.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -24,6 +25,9 @@ app.use("/console/api", consoleApi);
 // serves the SPA, otherwise the SPA would shadow them).
 app.get("/help/paper-account", (_req, res) => {
   res.type("html").send(paperAccountHtml());
+});
+app.get("/help/authenticator-app", (_req, res) => {
+  res.type("html").send(authenticatorAppHtml());
 });
 app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
 

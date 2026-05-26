@@ -74,6 +74,7 @@ export function renderHelpPage(page: HelpPage): string {
   <h1>IBKR Gateway</h1>
   <nav>
     <a href="/help/paper-account">Paper accounts</a>
+    <a href="/help/authenticator-app">Authenticator App</a>
     <a href="/console">Console</a>
   </nav>
 </header>
