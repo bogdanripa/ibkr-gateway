@@ -163,14 +163,25 @@ export function mcpHelpHtml(): string {
   cut a host off immediately.
 </p>
 
-<h2>API keys (legacy)</h2>
+<h2>API keys (programmatic access)</h2>
 <p>
-  If you'd rather not run OAuth — typically for CI jobs or
-  scheduled scripts — you can use a per-connection API key
-  instead. Connections auto-generate a <code>default</code> key on
-  creation; additional keys can be generated from the console.
-  API-key callers get full read+write access.
+  Not every caller is an AI host walking through OAuth. Any
+  third-party app, backend service, script, notebook, or
+  scheduled job can hit the same <code>/mcp</code> endpoint with a
+  per-connection API key — no consent screen, no token refresh, no
+  Firebase sign-in. The key goes on the request as a static
+  <code>Authorization: Bearer &lt;key&gt;</code> header.
 </p>
+<p>
+  Connections auto-generate a <code>default</code> key on creation;
+  you can mint additional keys (and revoke individual ones) from
+  the <a href="/console">console</a>. API-key callers get full
+  read+write access against the connection the key belongs to.
+</p>
+<pre class="card"><code>curl -sS https://ibkr-gateway.bogdanripa.com/mcp \\
+  -H "Authorization: Bearer ibkr_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre>
 <p class="muted">
   Either way, every call against <code>/mcp</code> is logged with
   source (oauth or apikey), scope, and the connection it touched.

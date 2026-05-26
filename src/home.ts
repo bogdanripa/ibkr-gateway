@@ -276,11 +276,14 @@ ${marketingHeaderHtml()}
       </p>
     </article>
     <article class="card">
-      <h3>API keys for CI</h3>
+      <h3>API keys for programmatic access</h3>
       <p>
-        Not every caller is interactive. Every connection auto-generates a
-        per-connection API key on creation; scripts and scheduled jobs can
-        use it as a static <code>Authorization: Bearer</code> credential.
+        Not every caller is an AI host. Every connection auto-generates
+        a per-connection API key on creation, and you can mint more
+        from the console. Any third-party app, script, scheduled job
+        or backend service can call <code>/mcp</code> with it as a
+        static <code>Authorization: Bearer</code> credential — no
+        OAuth dance required.
       </p>
     </article>
     <article class="card">
@@ -507,12 +510,14 @@ ${marketingHeaderHtml()}
   </details>
 
   <details>
-    <summary>What about non-MCP clients?</summary>
+    <summary>What about non-MCP / programmatic clients?</summary>
     <p>
       Use the per-connection API key. It's auto-generated when you
       create a connection and works as a static
       <code>Authorization: Bearer</code> credential against
-      <code>/mcp</code>. Same tool surface, no consent screen.
+      <code>/mcp</code> — usable from any third-party app, server,
+      script, notebook, or cron job. Same tool surface as the OAuth
+      path, no consent screen, no token refresh.
     </p>
   </details>
 </section>
