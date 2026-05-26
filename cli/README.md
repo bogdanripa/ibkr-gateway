@@ -22,9 +22,16 @@ node cli/login.js --mode paper
 node cli/login.js --mode live --headed             # visible Chromium (2FA / debug)
 IBKR_USERNAME=u IBKR_PASSWORD=p node cli/login.js  # non-interactive
 
+# List / pick your working account (only needed if you have >1):
+node cli/accounts.js list
+node cli/accounts.js set DUQ443672      # persists into session.json
+node cli/accounts.js current
+node cli/accounts.js unset
+
 # Read positions + cash:
-node cli/positions.js
+node cli/positions.js                   # current account (or the only one)
 node cli/positions.js --account DUQ443672
+node cli/positions.js --all             # every account
 
 # Place orders:
 node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT --yes
@@ -59,10 +66,19 @@ const info = await c.signIn({
 });
 await saveState(c.getState());
 
-// 2) account / portfolio
-const accounts = await c.getAccounts();           // [{accountId, accountTitle, ...}]
-const acct = await c.getDefaultAccountId();
-const snapshot = await c.getPositions(acct);
+// 2) account / portfolio (multi-account aware)
+const accounts = await c.getAccounts();        // [{accountId, accountTitle, ...}]
+// Single account? Things just work — every method below resolves it
+// implicitly. Multiple accounts? Either pick one once:
+await c.setCurrentAccount('DUQ443672');        // persists into c.getState()
+c.getCurrentAccount();                          // → 'DUQ443672'
+// …or pass `accountId` explicitly to each call. If you call a
+// per-account method while there are >1 accounts and none has been
+// picked, you'll get an IbkrError with stage 'no-account-selected'
+// and body.accounts listing the choices.
+
+const snapshot = await c.getPositions();       // implicit current/single
+const other = await c.getPositions('U7654321');
 // → { accountId, brokerageAccess, stocks, options, other, cash }
 
 const cash = await c.getCash(acct);
@@ -134,6 +150,7 @@ cli/
 ├── positions.js          # CLI: list positions / cash
 ├── place-order.js        # CLI: place a single order
 ├── orders.js             # CLI: list / status / cancel orders
+├── accounts.js           # CLI: list / set / unset current account
 └── lib/
     ├── client.js         # IbkrClient class (all functionality)
     ├── browser-login.js  # Playwright driver for /sso/Login

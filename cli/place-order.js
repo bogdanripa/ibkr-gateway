@@ -71,5 +71,8 @@ try {
   for (const r of result) console.error('   ' + JSON.stringify(r));
 } catch (e) {
   console.error('✗ ' + (e.message || e));
+  if (e.stage === 'no-account-selected') {
+    console.error('  → use `node cli/accounts.js set <id>` or pass --account ID');
+  }
   exit(1);
 }

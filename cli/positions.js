@@ -34,8 +34,31 @@ try { await client.tickle(); } catch (e) {
   console.error(`tickle failed: ${e.message}\nrun \`node cli/login.js\` to refresh`); exit(1);
 }
 
+// Account selection:
+//   --account ID  → that one
+//   --all         → every account
+//   default       → current account (set via `accounts set`); if none
+//                   set and there's exactly one account, that one; if
+//                   none set and multiple → ask the user to choose.
 const explicitAccount = flag('account');
-const accountIds = explicitAccount ? [explicitAccount] : (await client.getAccounts()).map((a) => a.accountId || a.id);
+const showAll = argv.includes('--all');
+let accountIds;
+if (explicitAccount) {
+  accountIds = [explicitAccount];
+} else if (showAll) {
+  accountIds = (await client.getAccounts()).map((a) => a.accountId || a.id);
+} else {
+  try {
+    accountIds = [await client.getDefaultAccountId()];
+  } catch (e) {
+    if (e.stage === 'no-account-selected') {
+      console.error('✗ ' + e.message);
+      console.error('  → use `node cli/accounts.js set <id>`, or pass --account ID, or --all');
+      exit(1);
+    }
+    throw e;
+  }
+}
 
 if (state.isPendingApplicant) {
   console.error('⚠  account is in PENDING-APPLICATION state — IBKR has no portfolio data yet.\n');

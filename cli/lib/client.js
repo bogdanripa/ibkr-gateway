@@ -5,7 +5,8 @@
 //   import { IbkrClient } from './lib/client.js';
 //   const c = new IbkrClient({ state: loadSavedState() });
 //   await c.signIn({ username, password, mode: 'paper' });
-//   await c.getPositions(c.getDefaultAccountId());
+//   await c.getPositions();        // implicit account (single or current)
+//   // or:  await c.setCurrentAccount('U1234567'); await c.getPositions();
 //   await c.placeOrder({ symbol: 'AAPL', side: 'BUY', quantity: 1, orderType: 'MKT' });
 //   saveSavedState(c.getState());
 //
@@ -33,6 +34,17 @@ function emptyState() {
     portalPrefix: null,   // e.g. "/portal.proxy/v1/portal" or "/v1/api"
     deviceId: null,
     tstToken: null,
+    // Multi-account: an IBKR user may have several sub-accounts
+    // (linked accounts, family accounts, paper + live, etc.). The
+    // *current* one is the implicit target for getPositions/placeOrder/
+    // etc. when none is passed. Resolved automatically if only one
+    // account exists; otherwise must be set via setCurrentAccount().
+    currentAccountId: null,
+    // Cached account list from the last getAccounts() call — purely
+    // to make setCurrentAccount() validation work offline and to power
+    // the "ambiguous account" error message. Refreshed by getAccounts().
+    accountsCache: null,
+    accountsCacheAt: null,
     updatedAt: null,
   };
 }
@@ -192,6 +204,15 @@ export class IbkrClient {
       brokerage = { state: 'unavailable', error: e.message };
     }
 
+    // Refresh account list + auto-pin a current account if there's
+    // exactly one (single-account users never have to think about it).
+    // Don't override an existing currentAccountId set by the caller.
+    let accounts = [];
+    try { accounts = await this.getAccounts(); } catch { /* non-fatal */ }
+    if (!this.state.currentAccountId && accounts.length === 1) {
+      this.state.currentAccountId = accounts[0].accountId || accounts[0].id;
+    }
+
     return {
       userId: this.state.userId,
       userName: this.state.userName,
@@ -200,6 +221,8 @@ export class IbkrClient {
       apiBase: this.state.apiBase,
       portalPrefix: this.state.portalPrefix,
       brokerage,
+      accounts,                                  // [{ accountId, ... }, ...]
+      currentAccountId: this.state.currentAccountId,
     };
   }
 
@@ -307,24 +330,80 @@ export class IbkrClient {
     return st;
   }
 
-  // ---------- account / portfolio ----------
+  // ---------- accounts / current-account selection ----------
 
-  async getAccounts() {
-    const r = this._expect200('portfolio/accounts', await this._get(this._portalUrl('portfolio/accounts')));
-    return Array.isArray(r) ? r : [];
+  // Fetch /portfolio/accounts and cache the result on the session.
+  // Pass { cache: true } to skip the network call when we already have
+  // a list (used by the implicit accountId resolver).
+  async getAccounts({ cache = false } = {}) {
+    if (cache && Array.isArray(this.state.accountsCache)) return this.state.accountsCache;
+    const r = this._expect200(
+      'portfolio/accounts',
+      await this._get(this._portalUrl('portfolio/accounts')),
+    );
+    const list = Array.isArray(r) ? r : [];
+    this.state.accountsCache = list;
+    this.state.accountsCacheAt = new Date().toISOString();
+    return list;
   }
 
-  // Convenience — first account id from /portfolio/accounts.
-  async getDefaultAccountId() {
-    const accts = await this.getAccounts();
-    if (!accts.length) throw new IbkrError('no accounts on this session');
-    return accts[0].accountId || accts[0].id;
+  // Currently-selected account id, or null if none has been set.
+  getCurrentAccount() { return this.state.currentAccountId; }
+
+  // Pin a current account. Validates against /portfolio/accounts unless
+  // { skipValidation: true } is passed (e.g. when restoring state).
+  // Returns the chosen id.
+  async setCurrentAccount(accountId, { skipValidation = false } = {}) {
+    if (!accountId) throw new IbkrError('setCurrentAccount: accountId required');
+    if (!skipValidation) {
+      const list = await this.getAccounts();
+      const found = list.find((a) => (a.accountId || a.id) === accountId);
+      if (!found) {
+        throw new IbkrError(
+          `setCurrentAccount: ${accountId} not in /portfolio/accounts (have: ${list.map((a) => a.accountId || a.id).join(', ')})`,
+        );
+      }
+    }
+    this.state.currentAccountId = accountId;
+    return accountId;
   }
+
+  // Forget the current selection. Subsequent calls fall back to "single
+  // account auto-detect, else error".
+  unsetCurrentAccount() { this.state.currentAccountId = null; }
+
+  // Resolve the implicit accountId for portfolio / order operations.
+  //   1. Caller passed one explicitly → use that.
+  //   2. state.currentAccountId is set → use that.
+  //   3. /portfolio/accounts returns exactly one row → use that
+  //      (transparent single-account UX).
+  //   4. Multiple accounts, none chosen → throw an IbkrError whose
+  //      `stage` is 'no-account-selected' and whose `body.accounts`
+  //      lists the choices. Callers / CLIs should catch this and
+  //      surface it to the user.
+  async _resolveAccountId(explicit) {
+    if (explicit) return explicit;
+    if (this.state.currentAccountId) return this.state.currentAccountId;
+    const list = await this.getAccounts({ cache: true });
+    if (list.length === 1) return list[0].accountId || list[0].id;
+    if (list.length === 0) throw new IbkrError('no accounts on this session', { stage: 'no-accounts' });
+    throw new IbkrError(
+      `multiple accounts on this session — pick one with setCurrentAccount() ` +
+      `(or pass accountId explicitly). Available: ` +
+      list.map((a) => `${a.accountId || a.id}${a.accountTitle ? ` (${a.accountTitle})` : ''}`).join(', '),
+      { stage: 'no-account-selected', body: { accounts: list } },
+    );
+  }
+
+  // Back-compat: same as resolving the implicit id. Kept because the
+  // old name was a public method; new code should rely on the implicit
+  // resolution in getPositions / placeOrder / etc.
+  async getDefaultAccountId() { return this._resolveAccountId(); }
 
   // Returns a normalised positions snapshot:
   //   { accountId, brokerageAccess, stocks: [...], options: [...], other: {...}, cash: [...] }
   async getPositions(accountId) {
-    if (!accountId) accountId = await this.getDefaultAccountId();
+    if (!accountId) accountId = await this._resolveAccountId();
 
     // accountMeta to surface brokerageAccess.
     const meta = await this._get(this._portalUrl(`portfolio/${encodeURIComponent(accountId)}/meta`));
@@ -365,7 +444,7 @@ export class IbkrClient {
 
   // /portfolio/{id}/ledger → normalised [{ ccy, cash, netLiq, unrealizedPnl, realizedPnl, excessLiq, settledCash }]
   async getCash(accountId) {
-    if (!accountId) accountId = await this.getDefaultAccountId();
+    if (!accountId) accountId = await this._resolveAccountId();
     const res = await this._get(this._portalUrl(`portfolio/${encodeURIComponent(accountId)}/ledger`));
     if (res.status !== 200 || !res.data || typeof res.data !== 'object') return [];
     return Object.entries(res.data).map(([ccy, l]) => ({
@@ -411,7 +490,7 @@ export class IbkrClient {
     onConfirm = async () => true,
     onProgress = () => {},
   } = {}) {
-    if (!accountId) accountId = await this.getDefaultAccountId();
+    if (!accountId) accountId = await this._resolveAccountId();
     if (!side || !/^(BUY|SELL)$/i.test(side)) throw new IbkrError('placeOrder: side must be BUY or SELL');
     if (!quantity || quantity <= 0) throw new IbkrError('placeOrder: quantity must be > 0');
     if (!orderType) throw new IbkrError('placeOrder: orderType required');
@@ -494,7 +573,7 @@ export class IbkrClient {
   // DELETE /iserver/account/{accountId}/order/{orderId}
   async cancelOrder({ accountId, orderId } = {}) {
     if (!orderId) throw new IbkrError('cancelOrder: orderId required');
-    if (!accountId) accountId = await this.getDefaultAccountId();
+    if (!accountId) accountId = await this._resolveAccountId();
     const res = await this._http(
       'DELETE',
       this._portalUrl(`iserver/account/${encodeURIComponent(accountId)}/order/${encodeURIComponent(orderId)}`),
