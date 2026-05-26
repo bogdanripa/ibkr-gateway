@@ -215,6 +215,28 @@ export function consoleHtml(): string {
   }
   .empty-card .big { font-size: 16px; color: var(--fg); margin-bottom: 4px; font-weight: 500; }
 
+  /* -------- Collapsible <details> -------- */
+  details.add-conn > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px;
+    border-radius: 6px;
+    user-select: none;
+  }
+  details.add-conn > summary::-webkit-details-marker { display: none; }
+  details.add-conn > summary:hover { background: var(--bg-elev); }
+  details.add-conn > summary h2 { margin: 0 !important; }
+  details.add-conn > summary .caret {
+    color: var(--muted); font-size: 12px;
+    transition: transform 0.12s ease-out;
+    display: inline-block;
+  }
+  details.add-conn[open] > summary .caret { transform: rotate(90deg); }
+  details.add-conn > .card { margin-top: 10px; }
+
   /* -------- Tables -------- */
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
@@ -639,7 +661,8 @@ function renderDashboard(me, connections) {
     </section>
 
     <section>
-      <h2>Add a connection</h2>
+      <details class="add-conn" \${connections.length === 0 ? "open" : ""}>
+        <summary><h2 style="display:inline;">Add a connection</h2><span class="caret">▸</span></summary>
       <div class="card">
         <label class="field-label">Mode</label>
         <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
@@ -677,6 +700,7 @@ function renderDashboard(me, connections) {
         <div style="margin-top:18px;"><button id="add-btn">Create connection</button></div>
         <div id="add-err" class="err" style="display:none;"></div>
       </div>
+      </details>
     </section>
   \`;
 
