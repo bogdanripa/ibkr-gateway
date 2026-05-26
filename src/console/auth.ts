@@ -12,6 +12,7 @@ import admin from "firebase-admin";
 import { FieldValue } from "@google-cloud/firestore";
 import { config } from "../config.js";
 import { accountsCol, type AccountDoc } from "../firestore.js";
+import { logError } from "../logging.js";
 
 // Initialise Firebase Admin once. On the VM (and locally via ADC) the
 // project credentials are picked up automatically.
@@ -44,21 +45,40 @@ export async function requireFirebaseAuth(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  const header = req.header("authorization") ?? "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    res.status(401).json({ error: "missing bearer token" });
+    return;
+  }
+  const idToken = match[1]!;
+
+  // Step 1: verify the token. Any throw here is genuinely an auth
+  // failure (expired, wrong project, malformed, revoked).
+  let decoded: admin.auth.DecodedIdToken;
   try {
-    const header = req.header("authorization") ?? "";
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    if (!match) {
-      res.status(401).json({ error: "missing bearer token" });
-      return;
-    }
-    const idToken = match[1]!;
+    decoded = await admin.auth().verifyIdToken(idToken);
+  } catch (err) {
+    const detail = (err as Error).message;
+    console.warn(`[auth] token verification failed: ${detail}`);
+    logError({
+      source: "console-api",
+      code: "FIREBASE_TOKEN_INVALID",
+      error: err,
+      context: { path: req.path, method: req.method },
+    }).catch(() => undefined);
+    res.status(401).json({ error: "invalid token", detail });
+    return;
+  }
+  if (!decoded.email) {
+    res.status(401).json({ error: "token has no email claim" });
+    return;
+  }
 
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    if (!decoded.email) {
-      res.status(401).json({ error: "token has no email claim" });
-      return;
-    }
-
+  // Step 2: upsert the user record. Failures here are infrastructure
+  // problems (Firestore unavailable, permission), NOT bad tokens — so
+  // don't mislead the user with "invalid token".
+  try {
     const user = await upsertAccount({
       firebase_uid: decoded.uid,
       email: decoded.email,
@@ -67,10 +87,15 @@ export async function requireFirebaseAuth(
     req.consoleUser = user;
     next();
   } catch (err) {
-    res.status(401).json({
-      error: "invalid token",
-      detail: (err as Error).message,
-    });
+    const detail = (err as Error).message;
+    console.error(`[auth] upsertAccount failed for ${decoded.uid}: ${detail}`);
+    logError({
+      source: "console-api",
+      code: "ACCOUNT_UPSERT_FAILED",
+      error: err,
+      context: { path: req.path, method: req.method, uid: decoded.uid },
+    }).catch(() => undefined);
+    res.status(500).json({ error: "account lookup failed", detail });
   }
 }
 

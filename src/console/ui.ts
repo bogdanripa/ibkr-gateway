@@ -1148,8 +1148,9 @@ function renderTestResult(div, data, ok) {
     const accounts = (data.ibkr_accounts || []).map(escapeHtml).join(", ") || "(none returned)";
     panel.innerHTML = '<strong class="ok">✓ Authenticated</strong> · IBKR account(s): ' + accounts;
   } else {
+    const detail = data.detail ? '<br><span class="muted" style="font-size:11px; opacity:0.8;">' + escapeHtml(data.detail) + '</span>' : '';
     panel.innerHTML = '<strong class="bad">✗ ' + escapeHtml(data.code || "Test failed") + '</strong><br>' +
-      '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>';
+      '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>' + detail;
   }
   div.querySelector(".conn-body").prepend(panel);
 }
@@ -1159,8 +1160,9 @@ function renderPositionsPanel(div, data, ok) {
   panel.className = "positions-panel";
   if (!ok) {
     panel.classList.add("test-result", "bad");
+    const detail = data.detail ? '<br><span class="muted" style="font-size:11px; opacity:0.8;">' + escapeHtml(data.detail) + '</span>' : '';
     panel.innerHTML = '<strong class="bad">✗ ' + escapeHtml(data.code || "Positions fetch failed") + '</strong><br>' +
-      '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>';
+      '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>' + detail;
     div.querySelector(".conn-body").prepend(panel);
     return;
   }
