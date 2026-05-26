@@ -9,4 +9,8 @@ function required(name: string): string {
 export const config = {
   projectId: required("GCP_PROJECT_ID"),
   port: Number(process.env.PORT ?? 8080),
+  // Public origin (no trailing slash). Used to construct absolute URLs
+  // in OAuth metadata responses + redirect URIs. Falls back to the
+  // production deploy for convenience in local-dev when not set.
+  publicOrigin: (process.env.PUBLIC_ORIGIN ?? "https://ibkr-gateway.bogdanripa.com").replace(/\/$/, ""),
 } as const;

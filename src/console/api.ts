@@ -24,7 +24,7 @@ import {
   type TestSignInOutcome,
 } from "../connection.js";
 import { logError } from "../logging.js";
-import { errorsCol } from "../firestore.js";
+import { errorsCol, oauthTokensCol, oauthClientsCol } from "../firestore.js";
 
 export const consoleApi = Router();
 consoleApi.use(requireFirebaseAuth);
@@ -114,8 +114,31 @@ consoleApi.post("/connections", async (req, res) => {
   // 3. Patch the doc with the real ref.
   await docRef.update({ ibkr_credential_ref: credentialRef });
 
+  // 4. Auto-generate a default API key. Users wiring up CI / scripts
+  //    expect a key to exist by default; making them click an extra
+  //    button was a needless step. The raw key is returned ONCE here
+  //    in `default_api_key` and not stored anywhere else.
+  const defaultKey = generateApiKey();
+  const keyRef = await apiKeysCol.add({
+    ibkr_connection_id: docRef.id,
+    key_hash: defaultKey.hash,
+    key_prefix: defaultKey.prefix,
+    label: "default",
+    created_at: FieldValue.serverTimestamp() as never,
+    last_used_at: null,
+    revoked_at: null,
+  });
+
   const after = await docRef.get();
-  res.status(201).json(publicConnection(docRef.id, after.data()!));
+  res.status(201).json({
+    ...publicConnection(docRef.id, after.data()!),
+    default_api_key: {
+      id: keyRef.id,
+      label: "default",
+      key_prefix: defaultKey.prefix,
+      raw_key: defaultKey.raw,
+    },
+  });
 });
 
 consoleApi.put("/connections/:id/credentials", async (req, res) => {
@@ -370,6 +393,62 @@ consoleApi.delete("/api-keys/:keyId", async (req, res) => {
   }
   if (keyDoc.get("revoked_at") == null) {
     await keyRef.update({ revoked_at: FieldValue.serverTimestamp() });
+  }
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// OAuth tokens (Connected Apps view)
+// ---------------------------------------------------------------------------
+//
+// One row per active access token issued via /oauth/*. Tokens are
+// account-scoped (not connection-scoped) so the listing is at the
+// account level, but each row exposes the connection it's bound to.
+
+consoleApi.get("/oauth-tokens", async (req, res) => {
+  const { account_id } = req.consoleUser!;
+  const snap = await oauthTokensCol
+    .where("account_id", "==", account_id)
+    .orderBy("created_at", "desc")
+    .get();
+
+  // Look up client_name for each distinct client_id (small in practice).
+  const clientIds = Array.from(new Set(snap.docs.map((d) => d.data().client_id)));
+  const clientNames = new Map<string, string>();
+  await Promise.all(clientIds.map(async (id) => {
+    const c = await oauthClientsCol.doc(id).get();
+    clientNames.set(id, c.exists ? (c.data()!.client_name ?? id) : id);
+  }));
+
+  res.json({
+    oauth_tokens: snap.docs
+      .filter((d) => !d.data().revoked_at)
+      .map((d) => {
+        const x = d.data();
+        return {
+          id: d.id,
+          client_id: x.client_id,
+          client_name: clientNames.get(x.client_id) ?? x.client_id,
+          connection_id: x.connection_id,
+          scope: x.scope,
+          created_at: tsToIso(x.created_at),
+          expires_at: tsToIso(x.expires_at),
+          last_used_at: tsToIso(x.last_used_at),
+        };
+      }),
+  });
+});
+
+consoleApi.delete("/oauth-tokens/:tokenId", async (req, res) => {
+  const { account_id } = req.consoleUser!;
+  const ref = oauthTokensCol.doc(String(req.params.tokenId));
+  const doc = await ref.get();
+  if (!doc.exists || doc.data()!.account_id !== account_id) {
+    res.status(404).json({ error: "token not found" });
+    return;
+  }
+  if (doc.data()!.revoked_at == null) {
+    await ref.update({ revoked_at: FieldValue.serverTimestamp() });
   }
   res.json({ ok: true });
 });

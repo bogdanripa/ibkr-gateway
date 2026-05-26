@@ -15,8 +15,10 @@
 
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { findConnectionByApiKey } from "./apikeys.js";
+import { findConnectionByOAuthToken } from "./oauth.js";
 import { withClient, ConnectionNotFoundError, CredentialRejectedError, EmailVerificationNeededError } from "./connection.js";
 import { logError } from "./logging.js";
+import { config } from "./config.js";
 import type { IbkrClient } from "../lib/ibkr/index.js";
 
 export const mcp = Router();
@@ -43,7 +45,14 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      mcp?: { apiKeyId: string; connectionId: string; label: string | null };
+      mcp?: {
+        connectionId: string;
+        scope: "read" | "write";
+        source: "apikey" | "oauth";
+        apiKeyId: string | null;
+        oauthTokenId: string | null;
+        label: string | null;
+      };
     }
   }
 }
@@ -55,21 +64,46 @@ mcp.use(async (req, res, next) => {
 
   const raw = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
   if (!raw) {
-    rpcError(res, null, -32001, "missing Authorization: Bearer <api key>", 401);
+    // Advertise the AS so MCP clients can discover where to authorize.
+    // RFC 6750 §3 form for the WWW-Authenticate header.
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer realm="ibkr-gateway", resource_metadata="${config.publicOrigin}/.well-known/oauth-protected-resource"`,
+    );
+    rpcError(res, null, -32001, "missing Authorization: Bearer <token>", 401);
     return;
   }
   try {
-    const resolved = await findConnectionByApiKey(raw);
-    if (!resolved) {
-      rpcError(res, null, -32001, "invalid or revoked API key", 401);
-      return;
+    // Try OAuth token first (new), API key second (legacy / CI use).
+    const oauth = await findConnectionByOAuthToken(raw);
+    if (oauth) {
+      req.mcp = {
+        connectionId: oauth.connection_id,
+        scope: oauth.scope,
+        source: "oauth",
+        apiKeyId: null,
+        oauthTokenId: oauth.id,
+        label: null,
+      };
+      return next();
     }
-    req.mcp = {
-      apiKeyId: resolved.id,
-      connectionId: resolved.ibkr_connection_id,
-      label: resolved.label,
-    };
-    next();
+    const apikey = await findConnectionByApiKey(raw);
+    if (apikey) {
+      req.mcp = {
+        connectionId: apikey.ibkr_connection_id,
+        scope: "write",      // legacy API keys are full-access
+        source: "apikey",
+        apiKeyId: apikey.id,
+        oauthTokenId: null,
+        label: apikey.label,
+      };
+      return next();
+    }
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer realm="ibkr-gateway", error="invalid_token", resource_metadata="${config.publicOrigin}/.well-known/oauth-protected-resource"`,
+    );
+    rpcError(res, null, -32001, "invalid or revoked credential", 401);
   } catch (e) {
     rpcError(res, null, -32603, `auth lookup failed: ${(e as Error).message}`, 500);
   }
@@ -119,7 +153,7 @@ mcp.post("/", async (req, res) => {
         // JSON-RPC notification (no id usually); ack with empty body.
         return res.status(204).end();
       case "tools/list":
-        return rpcOk(res, id, { tools: listToolDescriptors() });
+        return rpcOk(res, id, { tools: listToolDescriptors(req.mcp!.scope) });
       case "tools/call": {
         const name = String(params.name ?? "");
         const args = (params.arguments ?? {}) as Record<string, unknown>;
@@ -129,6 +163,16 @@ mcp.post("/", async (req, res) => {
             isError: true,
             content: [{ type: "text", text: `unknown tool: ${name}` }],
           });
+        }
+        // Enforce scope: read-only callers can't invoke mutating tools.
+        // -32004 is our chosen application code for "out of scope"; the
+        // 2025 MCP spec leaves -32000..-32099 free for server-defined.
+        if (tool.mutating && req.mcp!.scope === "read") {
+          return rpcError(
+            res, id, -32004,
+            `tool '${name}' requires the 'write' scope; this client was granted 'read' only. The user must re-authorize and select 'Read & write' on the consent screen.`,
+            403,
+          );
         }
         const result = await callTool(tool, args, req);
         return rpcOk(res, id, result);
@@ -184,6 +228,10 @@ interface ToolDef {
   /** Some tools don't need a fully-authenticated brokerage tier (e.g.
    * get_accounts only needs portfolio scope). Most do — declare true. */
   needsBrokerage?: boolean;
+  /** True if the tool changes state (orders, account selection, session).
+   * Hidden from tools/list and rejected on tools/call when the caller
+   * holds a read-only OAuth scope. Legacy API keys are always write. */
+  mutating?: boolean;
 }
 
 const TOOLS: Record<string, ToolDef> = {
@@ -206,6 +254,7 @@ const TOOLS: Record<string, ToolDef> = {
       additionalProperties: false,
     },
     handler: async (a, c) => ({ current_account_id: await c.setCurrentAccount(String(a.account_id)) }),
+    mutating: true,
   },
 
   get_portfolio: {
@@ -356,6 +405,7 @@ const TOOLS: Record<string, ToolDef> = {
       onConfirm:  async () => true,
     }),
     needsBrokerage: true,
+    mutating: true,
   },
   cancel_order: {
     description: "Cancel a working order by id.",
@@ -373,15 +423,18 @@ const TOOLS: Record<string, ToolDef> = {
       accountId: a.account_id ? String(a.account_id) : undefined,
     }),
     needsBrokerage: true,
+    mutating: true,
   },
 };
 
-function listToolDescriptors() {
-  return Object.entries(TOOLS).map(([name, t]) => ({
-    name,
-    description: t.description,
-    inputSchema: t.inputSchema,
-  }));
+function listToolDescriptors(scope: "read" | "write") {
+  return Object.entries(TOOLS)
+    .filter(([, t]) => scope === "write" || !t.mutating)
+    .map(([name, t]) => ({
+      name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    }));
 }
 
 // ---------------------------------------------------------------------------

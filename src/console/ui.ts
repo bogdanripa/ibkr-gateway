@@ -715,6 +715,13 @@ function renderDashboard(me, connections) {
 
     <section>
       <details class="add-conn">
+        <summary><h2 style="display:inline;">Connected apps</h2><span class="caret">▸</span></summary>
+        <div id="apps-panel" style="margin-top:10px;"></div>
+      </details>
+    </section>
+
+    <section>
+      <details class="add-conn">
         <summary><h2 style="display:inline;">Recent errors</h2><span class="caret">▸</span></summary>
         <div id="errors-panel" style="margin-top:10px;"></div>
       </details>
@@ -722,6 +729,18 @@ function renderDashboard(me, connections) {
   \`;
 
   renderConnList(connections);
+
+  // Connected apps panel — lazy-loaded on first expand.
+  const appsDetails = document.querySelector('details.add-conn:has(#apps-panel)');
+  if (appsDetails) {
+    let loaded = false;
+    appsDetails.addEventListener("toggle", () => {
+      if (appsDetails.open && !loaded) {
+        loaded = true;
+        loadConnectedApps();
+      }
+    });
+  }
 
   // Recent errors panel — lazy-loaded on first expand.
   const errorsDetails = document.querySelector('details.add-conn:has(#errors-panel)');
@@ -773,9 +792,16 @@ function renderDashboard(me, connections) {
       body.ibkr_totp_secret = t;
     }
     try {
-      await withLoading(addBtn, "Creating connection…", () => api("POST", "/connections", body));
+      const created = await withLoading(addBtn, "Creating connection…", () => api("POST", "/connections", body));
       toast("Connection created", "ok");
       await renderApp();
+      // Surface the auto-generated API key right after re-render so
+      // the user can copy it before navigating away. We find the
+      // freshly-rendered card by connection id.
+      if (created?.default_api_key?.raw_key) {
+        const card = document.querySelector('[data-conn-id="' + created.id + '"]');
+        if (card) showRawKey(card, created.default_api_key.raw_key);
+      }
     } catch (err) {
       errEl.textContent = err.message;
       errEl.style.display = "";
@@ -797,6 +823,7 @@ function renderConnList(connections) {
   for (const c of connections) {
     const div = document.createElement("div");
     div.className = "card conn";
+    div.setAttribute("data-conn-id", c.id);
     div.innerHTML = renderConnection(c);
     list.appendChild(div);
     wireConnection(div, c);
@@ -1252,6 +1279,60 @@ function renderPositionsPanel(div, data, ok) {
 }
 
 // ----------------------- Recent errors viewer -----------------------
+
+async function loadConnectedApps() {
+  const panel = document.getElementById("apps-panel");
+  if (!panel) return;
+  panel.innerHTML = '<div class="muted" style="padding:8px 0;"><span class="spinner"></span>Loading…</div>';
+  try {
+    const { oauth_tokens } = await api("GET", "/oauth-tokens");
+    if (!oauth_tokens.length) {
+      panel.innerHTML = \`
+        <div class="muted" style="padding:8px 0;">
+          No MCP clients connected yet. To wire up Claude / Cursor / etc., point them at
+          <code>\${escapeHtml(location.origin)}/mcp</code> — they'll discover the OAuth
+          endpoints automatically and walk you through authorization.
+        </div>\`;
+      return;
+    }
+    panel.innerHTML = \`
+      <table>
+        <thead><tr><th>Client</th><th>Connection</th><th>Scope</th><th>Authorized</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+          \${oauth_tokens.map((t) => \`
+            <tr>
+              <td>\${escapeHtml(t.client_name || t.client_id)}</td>
+              <td class="muted"><code>\${escapeHtml(t.connection_id)}</code></td>
+              <td>\${badge("scope", t.scope)}</td>
+              <td class="muted" title="\${escapeHtml(formatTime(t.created_at))}">\${escapeHtml(formatRel(t.created_at))}</td>
+              <td class="muted" title="\${escapeHtml(formatTime(t.last_used_at))}">\${escapeHtml(formatRel(t.last_used_at))}</td>
+              <td class="muted" title="\${escapeHtml(formatTime(t.expires_at))}">\${escapeHtml(formatRel(t.expires_at))}</td>
+              <td style="text-align:right;">
+                <button class="subtle" data-revoke-tok="\${escapeHtml(t.id)}" data-client="\${escapeHtml(t.client_name || t.client_id)}">Revoke</button>
+              </td>
+            </tr>
+          \`).join("")}
+        </tbody>
+      </table>\`;
+    panel.querySelectorAll("[data-revoke-tok]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.revokeTok;
+        const client = btn.dataset.client;
+        const ok = await confirmDanger({
+          title: "Revoke access for " + client + "?",
+          body: "The client will stop being able to call <code>/mcp</code> with this token. The user can re-authorize at any time.",
+          primary: { label: "Revoke", onClick: async () => api("DELETE", "/oauth-tokens/" + id) },
+        });
+        if (ok) {
+          toast("Access revoked", "ok");
+          await loadConnectedApps();
+        }
+      });
+    });
+  } catch (err) {
+    panel.innerHTML = '<div class="err">Could not load: ' + escapeHtml(err.message) + '</div>';
+  }
+}
 
 async function loadErrors() {
   const panel = document.getElementById("errors-panel");

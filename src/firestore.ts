@@ -12,6 +12,9 @@ export const COL = {
   connections: "ibkr_connections",
   apiKeys: "ibkr_api_keys",
   errors: "ibkr_errors",
+  oauthClients: "ibkr_oauth_clients",
+  oauthCodes: "ibkr_oauth_codes",
+  oauthTokens: "ibkr_oauth_tokens",
 } as const;
 
 // ---------- Document shapes (§6) ----------
@@ -105,11 +108,69 @@ export interface ErrorDoc {
   expires_at: Timestamp;
 }
 
+// ---------- OAuth (MCP authorization server) ----------
+
+/**
+ * Dynamic client registration (RFC 7591). One row per MCP client
+ * that has registered itself — e.g. Claude.ai, Cursor, a custom
+ * harness. Clients are anonymous (no per-user binding) — the user
+ * binding happens at /oauth/authorize when the human consents.
+ */
+export interface OAuthClientDoc {
+  client_name: string;
+  redirect_uris: string[];
+  // Currently we only support PKCE-protected "public" clients
+  // (no client_secret). MCP's primary use-case is desktop apps
+  // that can't safely store secrets anyway.
+  token_endpoint_auth_method: "none";
+  created_at: Timestamp;
+}
+
+/**
+ * Short-lived authorization codes (60s TTL). Issued from
+ * /oauth/authorize after user consent, redeemed at /oauth/token
+ * once for an access token. PKCE-bound: the code_challenge stored
+ * here must match the code_verifier the client sends.
+ */
+export interface OAuthCodeDoc {
+  client_id: string;
+  redirect_uri: string;
+  account_id: string;            // Firebase user's ibkr_accounts doc id
+  connection_id: string;
+  scope: "read" | "write";
+  code_challenge: string;
+  code_challenge_method: "S256";
+  expires_at: Timestamp;
+  used_at: Timestamp | null;
+}
+
+/**
+ * Access tokens. Like API keys, we store sha256(token) plus an
+ * 8-char prefix index for fast lookup; the raw token is given to
+ * the client only at /oauth/token. Tokens are bound to a single
+ * (connection, scope) pair — switching either requires re-authorize.
+ */
+export interface OAuthTokenDoc {
+  client_id: string;
+  account_id: string;
+  connection_id: string;
+  scope: "read" | "write";
+  token_prefix: string;          // first 8 chars of raw token
+  token_hash: string;            // base64 sha256
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  last_used_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+}
+
 // ---------- Typed collection accessors ----------
 export const accountsCol = db.collection(COL.accounts) as FirebaseFirestore.CollectionReference<AccountDoc>;
 export const connectionsCol = db.collection(COL.connections) as FirebaseFirestore.CollectionReference<ConnectionDoc>;
 export const apiKeysCol = db.collection(COL.apiKeys) as FirebaseFirestore.CollectionReference<ApiKeyDoc>;
 export const errorsCol = db.collection(COL.errors) as FirebaseFirestore.CollectionReference<ErrorDoc>;
+export const oauthClientsCol = db.collection(COL.oauthClients) as FirebaseFirestore.CollectionReference<OAuthClientDoc>;
+export const oauthCodesCol = db.collection(COL.oauthCodes) as FirebaseFirestore.CollectionReference<OAuthCodeDoc>;
+export const oauthTokensCol = db.collection(COL.oauthTokens) as FirebaseFirestore.CollectionReference<OAuthTokenDoc>;
 
 /** Path to a connection's single session doc. */
 export function sessionDocRef(connectionId: string): FirebaseFirestore.DocumentReference<SessionDoc> {

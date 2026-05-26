@@ -13,6 +13,7 @@ import { consoleHtml } from "./console/ui.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
 import { mcp } from "./mcp.js";
+import { oauth } from "./oauth.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -20,7 +21,11 @@ app.disable("x-powered-by");
 // Console API.
 app.use("/console/api", consoleApi);
 
-// MCP server (bearer-API-key auth; see src/mcp.ts).
+// OAuth 2.1 Authorization Server for MCP clients. Endpoints live at
+// /.well-known/oauth-authorization-server (discovery), /oauth/* (flow).
+app.use("/", oauth);
+
+// MCP server (accepts OAuth Bearer or legacy ibkr_ API key; see src/mcp.ts).
 app.use("/mcp", mcp);
 
 // Public help pages (must be registered BEFORE the /* fallback that
