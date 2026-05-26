@@ -32,6 +32,7 @@ import {
 } from "./firestore.js";
 import { fetchCredential, type IbkrCredential } from "./secrets.js";
 import { IbkrClient, IbkrError, type IbkrClientState } from "../lib/ibkr/index.js";
+import { logError } from "./logging.js";
 
 export class ConnectionNotFoundError extends Error {
   constructor(public readonly connectionId: string) {
@@ -152,6 +153,16 @@ async function signInFresh(
         credential_checked_at: FieldValue.serverTimestamp(),
       })
       .catch(() => undefined);
+    // Persist for later debugging — minus any credential plaintext
+    // (the only context we record is mode + the host/path we landed
+    // on, which IbkrError's stage/status convey).
+    await logError({
+      source: "connection",
+      connectionId,
+      code: "CREDENTIAL_REJECTED",
+      error: e,
+      context: { phase: "signIn", mode },
+    });
     if (e instanceof IbkrError) throw new CredentialRejectedError(connectionId, msg);
     throw new CredentialRejectedError(connectionId, msg);
   } finally {

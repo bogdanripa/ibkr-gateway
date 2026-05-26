@@ -702,9 +702,28 @@ function renderDashboard(me, connections) {
       </div>
       </details>
     </section>
+
+    <section>
+      <details class="add-conn">
+        <summary><h2 style="display:inline;">Recent errors</h2><span class="caret">▸</span></summary>
+        <div id="errors-panel" style="margin-top:10px;"></div>
+      </details>
+    </section>
   \`;
 
   renderConnList(connections);
+
+  // Recent errors panel — lazy-loaded on first expand.
+  const errorsDetails = document.querySelector('details.add-conn:has(#errors-panel)');
+  if (errorsDetails) {
+    let loaded = false;
+    errorsDetails.addEventListener("toggle", () => {
+      if (errorsDetails.open && !loaded) {
+        loaded = true;
+        loadErrors();
+      }
+    });
+  }
 
   // Mode toggle — show/hide activation code field.
   const totpWrap = document.getElementById("add-totp-wrap");
@@ -1137,6 +1156,77 @@ function renderPositionsPanel(div, data, ok) {
     </div>
   \`;
   div.querySelector(".conn-body").prepend(panel);
+}
+
+// ----------------------- Recent errors viewer -----------------------
+
+async function loadErrors() {
+  const panel = document.getElementById("errors-panel");
+  if (!panel) return;
+  panel.innerHTML = '<div class="muted" style="padding:8px 0;"><span class="spinner"></span>Loading…</div>';
+  try {
+    const { errors } = await api("GET", "/errors?limit=50");
+    renderErrors(panel, errors);
+  } catch (err) {
+    panel.innerHTML = '<div class="err">Could not load: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderErrors(panel, errors) {
+  if (!errors.length) {
+    panel.innerHTML = '<div class="muted" style="padding:12px;">No errors recorded in the last 14 days. 🎉</div>';
+    return;
+  }
+  panel.innerHTML = \`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span class="muted" style="font-size:12px;">\${errors.length} most recent (auto-deleted after 14 days)</span>
+      <button class="subtle" id="errors-refresh">Refresh</button>
+    </div>
+    <div class="card" style="padding:0;">
+      <table>
+        <thead><tr><th>When</th><th>Source</th><th>Code</th><th>Message</th></tr></thead>
+        <tbody>
+          \${errors.map((e, i) => \`
+            <tr data-err="\${i}" style="cursor:pointer;">
+              <td class="muted" title="\${escapeHtml(formatTime(e.ts))}">\${escapeHtml(formatRel(e.ts))}</td>
+              <td><span class="badge">\${escapeHtml(e.source)}</span></td>
+              <td>\${e.code ? '<code>' + escapeHtml(e.code) + '</code>' : '<span class="muted">—</span>'}</td>
+              <td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="\${escapeHtml(e.message)}">\${escapeHtml(e.message)}</td>
+            </tr>
+          \`).join("")}
+        </tbody>
+      </table>
+    </div>\`;
+  panel.querySelector("#errors-refresh").addEventListener("click", loadErrors);
+  panel.querySelectorAll("[data-err]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const err = errors[Number(row.dataset.err)];
+      showErrorDetail(err);
+    });
+  });
+}
+
+function showErrorDetail(err) {
+  const pre = (label, value) => value
+    ? \`<label class="field-label">\${escapeHtml(label)}</label>
+       <pre style="margin:0;white-space:pre-wrap;font-size:12px;background:var(--bg);padding:10px 12px;border-radius:6px;border:1px solid var(--border-soft);max-height:240px;overflow:auto;">\${escapeHtml(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre>\`
+    : "";
+  openModal({
+    title: "Error · " + (err.code || err.source),
+    body: \`
+      <div class="conn-meta-line" style="margin:0 0 12px;">
+        <span>\${escapeHtml(formatTime(err.ts))}</span>
+        <span>·</span>
+        <span><span class="badge">\${escapeHtml(err.source)}</span></span>
+        \${err.connection_id ? '<span>· connection <code>' + escapeHtml(err.connection_id) + '</code></span>' : ''}
+        \${err.api_key_id ? '<span>· api key <code>' + escapeHtml(err.api_key_id) + '</code></span>' : ''}
+      </div>
+      \${pre("Message", err.message)}
+      \${pre("Context", err.context)}
+      \${pre("Stack", err.stack)}\`,
+    primary: null,
+    secondary: { label: "Close" },
+  });
 }
 
 // ----------------------- Utilities -----------------------

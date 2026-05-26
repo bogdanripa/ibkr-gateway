@@ -14,5 +14,8 @@ service cloud.firestore {
     match /ibkr_api_keys/{doc=**} {
       allow read, write: if false;
     }
+    match /ibkr_errors/{doc=**} {
+      allow read, write: if false;
+    }
   }
 }

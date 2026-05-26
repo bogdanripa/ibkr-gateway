@@ -50,9 +50,12 @@ app.listen(config.port, () => {
 });
 
 // Never let an async error in a request handler take the whole process down.
+import { logError } from "./logging.js";
 process.on("unhandledRejection", (reason) => {
   console.error("unhandledRejection:", reason);
+  logError({ source: "unhandled", code: "UNHANDLED_REJECTION", error: reason }).catch(() => undefined);
 });
 process.on("uncaughtException", (err) => {
   console.error("uncaughtException:", err);
+  logError({ source: "unhandled", code: "UNCAUGHT_EXCEPTION", error: err }).catch(() => undefined);
 });

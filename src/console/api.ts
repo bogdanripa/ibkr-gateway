@@ -16,6 +16,8 @@ import {
 } from "../secrets.js";
 import { generateApiKey } from "../apikeys.js";
 import { withClient, CredentialRejectedError } from "../connection.js";
+import { logError } from "../logging.js";
+import { errorsCol } from "../firestore.js";
 
 export const consoleApi = Router();
 consoleApi.use(requireFirebaseAuth);
@@ -440,16 +442,57 @@ function tsToIso(ts: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Error log viewer — recent rows for this account, optionally filtered
+// by connection. Read-only; the gateway writes via src/logging.ts.
+// ---------------------------------------------------------------------------
+
+consoleApi.get("/errors", async (req, res) => {
+  const { account_id } = req.consoleUser!;
+  const connectionId = typeof req.query.connection_id === "string" ? req.query.connection_id : null;
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+
+  let q = errorsCol
+    .where("account_id", "==", account_id)
+    .orderBy("ts", "desc")
+    .limit(limit);
+  if (connectionId) q = q.where("connection_id", "==", connectionId);
+
+  const snap = await q.get();
+  res.json({
+    errors: snap.docs.map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        ts: tsToIso(x.ts),
+        source: x.source,
+        connection_id: x.connection_id,
+        api_key_id: x.api_key_id,
+        code: x.code,
+        message: x.message,
+        stack: x.stack,
+        context: x.context,
+      };
+    }),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Error handler: keeps the process alive on Firestore / Secret Manager errors.
 // Mounted LAST.
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-consoleApi.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+consoleApi.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const e = err as { message?: string; code?: number; details?: string };
-  // Surface useful detail without leaking credentials (none flow through here).
   const status = typeof e.code === "number" && e.code >= 400 && e.code <= 599 ? e.code : 500;
-  console.error("console api error:", e.message ?? err, e.details ?? "");
+  // Persist for later review; best-effort.
+  logError({
+    source: "console-api",
+    accountId: req.consoleUser?.account_id ?? null,
+    code: status ? `HTTP_${status}` : null,
+    error: err,
+    context: { method: req.method, path: req.path },
+  }).catch(() => undefined);
   res.status(status >= 400 && status < 600 ? status : 500).json({
     error: e.message ?? "internal error",
     detail: e.details,

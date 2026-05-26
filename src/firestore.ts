@@ -11,6 +11,7 @@ export const COL = {
   accounts: "ibkr_accounts",
   connections: "ibkr_connections",
   apiKeys: "ibkr_api_keys",
+  errors: "ibkr_errors",
 } as const;
 
 // ---------- Document shapes (§6) ----------
@@ -75,10 +76,40 @@ export interface SessionDoc {
   last_tickle_ok: boolean;
 }
 
+/**
+ * Production error log. Append-only; every entry is one observed
+ * failure (auth refused, IBKR HTTP 5xx, tool dispatch crash, etc.).
+ * Lives at the top level (not nested under a connection) so global
+ * filters work; account_id / connection_id are denormalised for
+ * filtering on the console side without joins.
+ *
+ * Indexed by account_id + ts desc (see firestore.indexes.json). The
+ * expires_at field powers a Firestore TTL policy (configured
+ * separately in the GCP console / via gcloud) so logs auto-delete
+ * after a fortnight — we explicitly DO NOT want forever-retained
+ * credentials-adjacent failure messages.
+ */
+export interface ErrorDoc {
+  ts: Timestamp;
+  source: "mcp" | "console-api" | "connection" | "unhandled";
+  // Denormalised so listings can filter without an extra lookup.
+  account_id: string | null;
+  connection_id: string | null;
+  api_key_id: string | null;
+  code: string | null;       // e.g. "CREDENTIAL_REJECTED", "HTTP_500"
+  message: string;
+  stack: string | null;
+  // Arbitrary contextual data (method/path/tool/args summary).
+  // MUST NOT contain credential values — callers are responsible.
+  context: Record<string, unknown> | null;
+  expires_at: Timestamp;
+}
+
 // ---------- Typed collection accessors ----------
 export const accountsCol = db.collection(COL.accounts) as FirebaseFirestore.CollectionReference<AccountDoc>;
 export const connectionsCol = db.collection(COL.connections) as FirebaseFirestore.CollectionReference<ConnectionDoc>;
 export const apiKeysCol = db.collection(COL.apiKeys) as FirebaseFirestore.CollectionReference<ApiKeyDoc>;
+export const errorsCol = db.collection(COL.errors) as FirebaseFirestore.CollectionReference<ErrorDoc>;
 
 /** Path to a connection's single session doc. */
 export function sessionDocRef(connectionId: string): FirebaseFirestore.DocumentReference<SessionDoc> {

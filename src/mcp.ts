@@ -16,6 +16,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { findConnectionByApiKey } from "./apikeys.js";
 import { withClient, ConnectionNotFoundError, CredentialRejectedError } from "./connection.js";
+import { logError } from "./logging.js";
 import type { IbkrClient } from "../lib/ibkr/index.js";
 
 export const mcp = Router();
@@ -410,6 +411,18 @@ async function callTool(
     };
   } catch (e) {
     const msg = humanError(e);
+    // Persist tool-call failures (anything that escaped withClient or
+    // the tool handler) for later review. Args are summarised — never
+    // log raw values that might contain anything sensitive.
+    logError({
+      source: "mcp",
+      connectionId,
+      apiKeyId: req.mcp?.apiKeyId,
+      code: (e as Error & { stage?: string; status?: number })?.stage
+        ?? ((e as Error & { status?: number })?.status ? `HTTP_${(e as Error & { status?: number }).status}` : null),
+      error: e,
+      context: { tool: (req.body as { params?: { name?: string } })?.params?.name ?? null, arg_keys: Object.keys(args) },
+    }).catch(() => undefined);
     return {
       isError: true,
       content: [{ type: "text" as const, text: msg }],
@@ -435,9 +448,16 @@ function humanError(e: unknown): string {
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-mcp.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+mcp.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const e = err as Error;
-  console.error("mcp error:", e.message ?? err);
+  logError({
+    source: "mcp",
+    connectionId: req.mcp?.connectionId ?? null,
+    apiKeyId: req.mcp?.apiKeyId ?? null,
+    code: "MCP_INTERNAL",
+    error: err,
+    context: { method: (req.body as { method?: string })?.method ?? null },
+  }).catch(() => undefined);
   res.status(500).json({
     jsonrpc: "2.0",
     id: null,
