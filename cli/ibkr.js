@@ -114,6 +114,16 @@ async function promptSignIn(client) {
     result = await client.signIn({
       username, password, mode, headed, totpSecret,
       onProgress: (m) => p.step(m),
+      onNeedCode: async ({ previousRejected }) => {
+        p.step('IBKR is asking for an emailed verification code');
+        if (previousRejected) {
+          console.log('  Previous code was rejected by IBKR. Check your email for a fresh one.');
+        } else {
+          console.log('  Check your email for a 6-digit "Temporary Security Code" from IBKR.');
+        }
+        const code = (await ask('Verification code (blank to abort): ')).trim();
+        return code || null;
+      },
     });
   } catch (e) {
     p.fail('sign-in failed: ' + humanError(e));

@@ -15,7 +15,7 @@
 
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { findConnectionByApiKey } from "./apikeys.js";
-import { withClient, ConnectionNotFoundError, CredentialRejectedError } from "./connection.js";
+import { withClient, ConnectionNotFoundError, CredentialRejectedError, EmailVerificationNeededError } from "./connection.js";
 import { logError } from "./logging.js";
 import type { IbkrClient } from "../lib/ibkr/index.js";
 
@@ -433,6 +433,7 @@ async function callTool(
 function humanError(e: unknown): string {
   if (e instanceof ConnectionNotFoundError) return `connection not found (it may have been deleted)`;
   if (e instanceof CredentialRejectedError) return `IBKR rejected the stored credentials — re-test the connection from the console`;
+  if (e instanceof EmailVerificationNeededError) return `IBKR's new-device verification is required. Open the web console and click Test on this connection to enter the emailed code, then retry.`;
   if (e instanceof Error) {
     const m = e as Error & { stage?: string; status?: number; body?: { error?: string } };
     const detail = m.body?.error;

@@ -281,10 +281,14 @@ consoleApi.get("/connections/:id/positions", async (req, res) => {
     res.json({ ok: true, snapshot });
   } catch (err) {
     if (err instanceof EmailVerificationNeededError) {
-      res.status(202).json({
+      // Positions doesn't drive an interactive verification (there's
+      // no follow-up endpoint that can resume the parked sign-in from
+      // here). Tell the user to do Test first — same connection,
+      // proper code-entry modal.
+      res.status(412).json({
         ok: false,
-        code: "EMAIL_VERIFICATION_REQUIRED",
-        error: "IBKR sent a verification code to the account email. Test the connection and paste the code.",
+        code: "VERIFICATION_REQUIRED_VIA_TEST",
+        error: "IBKR's new-device verification needs to be completed from the web console. Click Test on this connection to be prompted for the code, then retry Positions.",
       });
       return;
     }
