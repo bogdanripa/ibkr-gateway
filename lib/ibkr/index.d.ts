@@ -45,6 +45,13 @@ export interface SignInOptions {
   debugDir?: string;
 }
 
+/**
+ * IbkrClient.signIn automatically pre-loads `this.state.cookies` into
+ * the headless browser context so IBKR sees us as a returning client.
+ * Callers don't need to pass priorCookies explicitly — but it's
+ * exposed on the underlying loginWithBrowser() for tests / advanced use.
+ */
+
 export interface SignInResult {
   userId: number | null;
   userName: string | null;
