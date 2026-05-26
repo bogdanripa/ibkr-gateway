@@ -185,12 +185,47 @@ async function listOrders(client) {
   });
 }
 
+// Format the IBKR order-time string ("YYMMDDhhmmss") into ISO-ish.
+function fmtOrderTime(s) {
+  if (!s || typeof s !== 'string' || s.length < 12) return s || '—';
+  const yy = '20' + s.slice(0, 2);
+  return `${yy}-${s.slice(2, 4)}-${s.slice(4, 6)} ${s.slice(6, 8)}:${s.slice(8, 10)}:${s.slice(10, 12)} UTC`;
+}
+
+function printRecord(rows) {
+  const w = Math.max(...rows.map(([k]) => k.length));
+  for (const [k, v] of rows) {
+    if (v == null || v === '' || v === '—') continue;
+    console.log(`  ${k.padEnd(w)}  ${v}`);
+  }
+}
+
 async function orderStatus(client) {
   const id = await ask('Order id: ');
   if (!id) return;
   await safe(async () => {
-    const status = await client.getOrderStatus(id);
-    console.log(JSON.stringify(status, null, 2));
+    const s = await client.getOrderStatus(id);
+    const status = s.order_status || s.order_state || s.status || 'unknown';
+    const note = ORDER_STATUS_NOTE[status];
+    console.log(`\n── Order ${s.order_id || id} ──`);
+    printRecord([
+      ['Action',     s.order_description_with_contract || s.order_description || s.orderDesc || ''],
+      ['Symbol',     [s.symbol, s.sec_type, s.listing_exchange].filter(Boolean).join(' · ')
+                       + (s.conid ? `  (conid ${s.conid})` : '')],
+      ['Side',       s.side === 'B' ? 'BUY' : s.side === 'S' ? 'SELL' : s.side],
+      ['Quantity',   s.size_and_fills
+                        ? `${s.size_and_fills} (filled / total)`
+                        : (s.total_size != null
+                           ? `${s.total_size}` + (s.cum_fill != null ? ` (filled ${s.cum_fill})` : '')
+                           : '')],
+      ['Order type', s.order_type || s.orderType],
+      ['Limit',      s.limit_price != null ? s.limit_price : (s.price || '')],
+      ['Stop',       s.stop_price != null ? s.stop_price : ''],
+      ['TIF',        s.tif || s.time_in_force],
+      ['Status',     `${status}${note ? `  — ${note}` : ''}`],
+      ['Placed at',  fmtOrderTime(s.order_time || s.last_execution_time)],
+      ['Account',    s.account || s.order_clearing_account || ''],
+    ]);
   });
 }
 
@@ -200,7 +235,12 @@ async function cancelOrder(client) {
   if (!(await yesNo(`Really cancel order ${id}?`))) return;
   await safe(async () => {
     const r = await client.cancelOrder({ orderId: id });
-    console.log(JSON.stringify(r, null, 2));
+    const msg = r?.msg || r?.message || 'cancellation request submitted';
+    console.log(`✓ ${msg}`);
+    printRecord([
+      ['Order ID',  r?.order_id ?? id],
+      ['Account',   r?.account || ''],
+    ]);
   });
 }
 
