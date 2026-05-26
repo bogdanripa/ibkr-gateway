@@ -68,8 +68,12 @@ sudo rm -f "$TARBALL"
 log "installing dependencies"
 ( cd "$NEW_DIR" && sudo npm ci --omit=dev=false --no-audit --no-fund )
 
-log "ensuring Playwright Chromium is installed"
-( cd "$NEW_DIR" && sudo npx --yes playwright install chromium )
+log "ensuring Playwright Chromium + headless-shell are installed"
+# Playwright 1.49+ split the headless shell out of full Chromium; in
+# headless mode (the default) it spawns chrome-headless-shell, which
+# is a separate download. Install both so either mode works without
+# fishing for an executable at first signIn.
+( cd "$NEW_DIR" && sudo npx --yes playwright install chromium chromium-headless-shell )
 
 # 3. Atomic swap.
 if [[ -d "$APP_DIR" ]]; then
