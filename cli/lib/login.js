@@ -116,15 +116,31 @@ export async function loginWithBrowser({
     await page.goto(opts.url, { waitUntil: 'domcontentloaded', timeout: opts.timeoutMs });
 
     // 1. Dismiss the GDPR cookie banner if it's covering the form.
-    {
-      const cookieBtn = page.locator(opts.cookieDismissSel).first();
-      if (await cookieBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        onProgress('dismissing cookie consent banner');
-        await cookieBtn.click({ timeout: 5000 }).catch(() => {});
-        // Give it a beat to animate out so it doesn't intercept later clicks.
-        await page.waitForTimeout(300);
+    //    The banner is lazy-injected (~1-3s after DOMContentLoaded) so a
+    //    quick isVisible check at t=0 will miss it. We wait for *either*
+    //    the form or the banner to appear, dismiss the banner if present,
+    //    and re-check right before clicking submit (it can also re-appear
+    //    after navigations).
+    const dismissCookieBanner = async (label = 'dismissing cookie consent banner') => {
+      const btn = page.locator(opts.cookieDismissSel).first();
+      if (await btn.isVisible({ timeout: 100 }).catch(() => false)) {
+        onProgress(label);
+        await btn.click({ timeout: 5000, force: true }).catch(() => {});
+        // Wait for it to actually disappear so it can't intercept clicks.
+        await page
+          .locator(opts.cookieDismissSel)
+          .first()
+          .waitFor({ state: 'hidden', timeout: 5000 })
+          .catch(() => {});
       }
-    }
+    };
+    // Give the banner up to 5s to mount, then dismiss whichever of
+    // {banner, form} we see first.
+    await Promise.race([
+      page.locator(opts.cookieDismissSel).first().waitFor({ state: 'visible', timeout: 5000 }),
+      page.locator(opts.userSel).first().waitFor({ state: 'visible', timeout: 5000 }),
+    ]).catch(() => {});
+    await dismissCookieBanner();
 
     onProgress(`waiting for login form (${opts.userSel})`);
     // The form is rendered by xyz.bundle.min.js into .loginformWrapper —
@@ -187,6 +203,10 @@ export async function loginWithBrowser({
     onProgress('filling password');
     await page.fill(opts.passSel, password);
 
+    // Banner sometimes re-mounts after toggle/input interactions; clear
+    // it again just before the click so it can't eat our submit.
+    await dismissCookieBanner('re-dismissing cookie banner');
+
     onProgress('submitting');
     let submitted = false;
     const submitBtn = page.locator(opts.submitSel).first();
@@ -218,24 +238,31 @@ export async function loginWithBrowser({
       if (url.includes('/sso/Dispatcher') || url.includes('/portal.proxy')) {
         success = true; break;
       }
-      // Failure detection — IBKR renders the entire xyz form (every
-      // possible error / 2FA screen) into one DOM with display:none
-      // toggles, so a text match is meaningless unless the element is
-      // actually visible. We iterate matches and check visibility.
-      const matches = await page
-        .locator(
-          'text=/(invalid|incorrect|password|2-step|two[- ]factor|security challenge|locked|disabled)/i',
-        )
-        .all()
-        .catch(() => []);
-      for (const m of matches) {
-        if (!(await m.isVisible({ timeout: 100 }).catch(() => false))) continue;
-        const txt = (await m.textContent({ timeout: 100 }).catch(() => null))?.trim();
-        if (!txt) continue;
-        // Ignore neutral / informational mentions of these words.
-        if (/^(password|two[- ]factor|two-step)$/i.test(txt)) continue;
-        if (/problem with logging in\?/i.test(txt)) continue;
-        throw new Error(`IBKR login refused: "${txt.slice(0, 200)}"`);
+      // Failure detection — IBKR renders the entire xyz form into one
+      // DOM with display:none toggles, so a text match is meaningless
+      // unless the element is actually visible. Check the two surfaces
+      // IBKR uses for real errors:
+      //   1. <div role="alert"> — top-of-form banner, e.g.
+      //      "You have selected the Live Account Mode, but the
+      //      specified user is a Paper Trading user..."
+      //   2. .invalid-feedback under an .is-invalid input — Bootstrap
+      //      field validation (e.g. "Invalid username password
+      //      combination", "Incorrect security code").
+      const surfaces = ['[role="alert"]', '.is-invalid + .invalid-feedback, .is-invalid ~ .invalid-feedback'];
+      for (const sel of surfaces) {
+        for (const m of await page.locator(sel).all().catch(() => [])) {
+          if (!(await m.isVisible({ timeout: 100 }).catch(() => false))) continue;
+          const txt = (await m.textContent({ timeout: 100 }).catch(() => null))?.trim();
+          if (!txt) continue;
+          // Specific actionable hint for the most common foot-gun.
+          if (/Live Account Mode.*Paper Trading user/i.test(txt)) {
+            throw new Error(
+              `IBKR login refused: ${txt.slice(0, 250)}\n` +
+              `  hint: re-run with --paper (or IBKR_PAPER=1)`,
+            );
+          }
+          throw new Error(`IBKR login refused: ${txt.slice(0, 250)}`);
+        }
       }
       await page.waitForTimeout(500);
     }
