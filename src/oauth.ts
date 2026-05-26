@@ -598,6 +598,7 @@ function consentPageHtml(p: AuthorizeParams, clientName: string): string {
     padding: 10px 12px; font: inherit; width: 100%;
   }
   button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: 0.55; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
   button.primary:hover { filter: brightness(1.1); }
   button.subtle { background: transparent; }
@@ -721,34 +722,61 @@ async function renderSignedIn(user) {
   \`;
   document.getElementById("so").addEventListener("click", (e) => { e.preventDefault(); signOut(auth); });
 
-  const submit = async (decision) => {
-    const connId = document.getElementById("conn").value;
-    const scope = document.querySelector('input[name="scope"]:checked').value;
-    const tok = await user.getIdToken();
-    const r = await fetch("/oauth/consent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
-      body: JSON.stringify({
-        decision,
-        client_id: CFG.params.client_id,
-        redirect_uri: CFG.params.redirect_uri,
-        state: CFG.params.state,
-        code_challenge: CFG.params.code_challenge,
-        code_challenge_method: CFG.params.code_challenge_method,
-        requested_scope: CFG.params.scope,
-        connection_id: connId,
-        scope,
-      }),
-    });
-    const out = await r.json();
-    if (!r.ok) {
-      content.innerHTML = '<p class="bad">' + escapeHtml(out.error || ("HTTP " + r.status)) + '</p>';
-      return;
-    }
-    window.location.href = out.redirect;
+  const approveBtn = document.getElementById("approve");
+  const denyBtn = document.getElementById("deny");
+  const approveLabel = approveBtn.textContent;
+  const denyLabel = denyBtn.textContent;
+
+  const setBusy = (which) => {
+    approveBtn.disabled = true;
+    denyBtn.disabled = true;
+    if (which === "approve") approveBtn.textContent = "Authorizing…";
+    else denyBtn.textContent = "Denying…";
   };
-  document.getElementById("approve").addEventListener("click", () => submit("approve"));
-  document.getElementById("deny").addEventListener("click", () => submit("deny"));
+  const clearBusy = () => {
+    approveBtn.disabled = false;
+    denyBtn.disabled = false;
+    approveBtn.textContent = approveLabel;
+    denyBtn.textContent = denyLabel;
+  };
+
+  const submit = async (decision) => {
+    setBusy(decision);
+    try {
+      const connId = document.getElementById("conn").value;
+      const scope = document.querySelector('input[name="scope"]:checked').value;
+      const tok = await user.getIdToken();
+      const r = await fetch("/oauth/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
+        body: JSON.stringify({
+          decision,
+          client_id: CFG.params.client_id,
+          redirect_uri: CFG.params.redirect_uri,
+          state: CFG.params.state,
+          code_challenge: CFG.params.code_challenge,
+          code_challenge_method: CFG.params.code_challenge_method,
+          requested_scope: CFG.params.scope,
+          connection_id: connId,
+          scope,
+        }),
+      });
+      const out = await r.json();
+      if (!r.ok) {
+        content.innerHTML = '<p class="bad">' + escapeHtml(out.error || ("HTTP " + r.status)) + '</p>';
+        return;
+      }
+      // Keep the buttons in their busy state during the redirect — the
+      // browser is about to navigate away and re-enabling them would
+      // just flash before the page unloads.
+      window.location.href = out.redirect;
+    } catch (e) {
+      clearBusy();
+      content.innerHTML = '<p class="bad">' + escapeHtml(e.message || String(e)) + '</p>';
+    }
+  };
+  approveBtn.addEventListener("click", () => submit("approve"));
+  denyBtn.addEventListener("click", () => submit("deny"));
 }
 
 onAuthStateChanged(auth, (user) => {
