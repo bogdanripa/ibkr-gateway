@@ -1021,36 +1021,47 @@ function updateConnectionBadge(div, status, c) {
   if (badges.length >= 2) badges[1].outerHTML = badge("status", status, { ...c, credential_checked_at: new Date().toISOString() });
 }
 
-async function runTest(div, c, emailCode = null) {
+async function runTest(div, c) {
   const btn = div.querySelector('[data-act="test"]');
   div.querySelectorAll(".test-result, .positions-panel").forEach((n) => n.remove());
   try {
-    const resp = await withLoading(btn, emailCode ? "Verifying…" : "Testing…", async () => {
+    let resp = await withLoading(btn, "Testing…", async () => {
       const r = await fetch("/console/api/connections/" + c.id + "/test", {
         method: "POST",
-        headers: {
-          "Authorization": "Bearer " + currentToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(emailCode ? { email_code: emailCode } : {}),
+        headers: { "Authorization": "Bearer " + currentToken },
       });
       return { status: r.status, ok: r.ok, data: await r.json() };
     });
 
-    // 202 + EMAIL_VERIFICATION_REQUIRED → ask the user, then retry.
-    if (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
+    // Drive the verification loop. The gateway keeps the SAME browser
+    // session open between requests, so the email token stays valid.
+    while (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
       const result = await promptEmailVerificationCode(c, {
         previousRejected: !!resp.data?.previous_rejected,
       });
       const code = result && typeof result === "object" ? result.code : null;
       if (!code) {
+        // Tell the gateway to abort the parked sign-in (null body),
+        // best-effort, then bail with a friendly notice.
+        fetch("/console/api/connections/" + c.id + "/verify", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + currentToken, "Content-Type": "application/json" },
+          body: JSON.stringify({ email_code: "" }),
+        }).catch(() => {});
         renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
         return;
       }
-      // Recurse with the code — same UI flow, just supplying the
-      // emailCode to the next /test call.
-      await runTest(div, c, code);
-      return;
+      resp = await withLoading(btn, "Verifying…", async () => {
+        const r = await fetch("/console/api/connections/" + c.id + "/verify", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + currentToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email_code: code }),
+        });
+        return { status: r.status, ok: r.ok, data: await r.json() };
+      });
     }
 
     renderTestResult(div, resp.data, resp.ok);

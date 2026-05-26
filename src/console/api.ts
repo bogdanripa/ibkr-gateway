@@ -15,7 +15,14 @@ import {
   destroyCredential,
 } from "../secrets.js";
 import { generateApiKey } from "../apikeys.js";
-import { withClient, CredentialRejectedError, EmailVerificationNeededError } from "../connection.js";
+import {
+  withClient,
+  CredentialRejectedError,
+  EmailVerificationNeededError,
+  startTestSignIn,
+  resumeWithCode,
+  type TestSignInOutcome,
+} from "../connection.js";
 import { logError } from "../logging.js";
 import { errorsCol } from "../firestore.js";
 
@@ -199,44 +206,66 @@ consoleApi.post("/connections/:id/test", async (req, res) => {
   const conn = await loadOwnedConnection(req, res);
   if (!conn) return;
 
-  // Optional verification code for IBKR's new-device challenge. The UI
-  // POSTs it on retry after the previous Test surfaced the prompt.
-  const body = (req.body ?? {}) as { email_code?: string };
-  const emailCode = typeof body.email_code === "string" ? body.email_code.trim() : null;
-
   try {
-    const accounts = await withClient(
-      conn.id,
-      async (client) => client.getAccounts(),
-      { emailCode },
-    );
-    res.json({
-      ok: true,
-      ibkr_accounts: accounts.map((a) => (a.accountId ?? a.id) as string),
+    const result = await startTestSignIn(conn.id);
+    if (result.kind === "done") return respondToOutcome(res, result.outcome);
+    // Browser parked at /restricted/ waiting for a code.
+    res.status(202).json({
+      ok: false,
+      code: "EMAIL_VERIFICATION_REQUIRED",
+      previous_rejected: result.previousRejected,
+      error: "IBKR sent a verification code to the account email. Paste it and retry.",
     });
   } catch (err) {
-    if (err instanceof EmailVerificationNeededError) {
-      res.status(202).json({
-        ok: false,
-        code: "EMAIL_VERIFICATION_REQUIRED",
-        previous_rejected: err.previousRejected,
-        error: err.previousRejected
-          ? "IBKR rejected the previous code. Paste the FRESH email IBKR just sent and try again."
-          : "IBKR sent a verification code to the account email. Paste it and retry.",
-      });
-      return;
-    }
     if (err instanceof CredentialRejectedError) {
-      res.status(400).json({
-        ok: false,
-        code: "CREDENTIAL_REJECTED",
-        error: err.message,
-      });
+      res.status(400).json({ ok: false, code: "CREDENTIAL_REJECTED", error: err.message });
       return;
     }
     throw err;
   }
 });
+
+/**
+ * Resume a sign-in that's parked on IBKR's /restricted/ page, by
+ * feeding it the verification code the user just got via email.
+ * Same browser session, so the token IBKR generated is still valid.
+ */
+consoleApi.post("/connections/:id/verify", async (req, res) => {
+  const conn = await loadOwnedConnection(req, res);
+  if (!conn) return;
+  const body = (req.body ?? {}) as { email_code?: string };
+  const code = typeof body.email_code === "string" ? body.email_code.trim() : null;
+  if (!code || !/^\d{4,8}$/.test(code)) {
+    res.status(400).json({ ok: false, code: "BAD_CODE", error: "code must be 4–8 digits" });
+    return;
+  }
+
+  const result = await resumeWithCode(conn.id, code);
+  if (result.kind === "not-pending") {
+    res.status(409).json({
+      ok: false,
+      code: "NO_PENDING_SIGN_IN",
+      error: "No sign-in is currently waiting on a verification code. Click Test to start one.",
+    });
+    return;
+  }
+  if (result.kind === "done") return respondToOutcome(res, result.outcome);
+  // Code rejected — IBKR is asking again. Surface as another 202.
+  res.status(202).json({
+    ok: false,
+    code: "EMAIL_VERIFICATION_REQUIRED",
+    previous_rejected: result.previousRejected,
+    error: "IBKR rejected that code. Use the FRESHEST email — paste it below.",
+  });
+});
+
+function respondToOutcome(res: Response, outcome: TestSignInOutcome): void {
+  if (outcome.kind === "success") {
+    res.json({ ok: true, ibkr_accounts: outcome.ibkr_accounts });
+  } else {
+    res.status(400).json({ ok: false, code: outcome.code ?? "FAILED", error: outcome.error });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Positions — a read-only deep smoke that exercises everything the

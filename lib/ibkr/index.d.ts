@@ -41,6 +41,17 @@ export interface SignInOptions {
    * once the device is trusted.
    */
   emailCode?: string | null;
+  /**
+   * Async callback invoked when IBKR shows /restricted/ and a fresh
+   * email-verification code is needed. Resolving with a string
+   * supplies the code (signIn continues in the same browser session);
+   * resolving with null aborts and throws
+   * EmailVerificationRequiredError. Called once per attempt — if IBKR
+   * rejects the supplied code the callback is invoked again with
+   * `previousRejected: true` so the caller can prompt for a fresh one
+   * without re-running auth.
+   */
+  onNeedCode?: ((info: { previousRejected: boolean }) => Promise<string | null>) | null;
   onProgress?: (msg: string) => void;
   debugDir?: string;
 }
