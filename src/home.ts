@@ -215,7 +215,7 @@ ${marketingHeaderHtml()}
 <main>
 
 <section class="hero" aria-labelledby="hero-h">
-  <h1 id="hero-h">Bring AI tools to your<br/>Interactive Brokers account</h1>
+  <h1 id="hero-h">Bring AI tools to your <br/>Interactive Brokers account</h1>
   <p class="lead">
     IBKR Gateway is a free, hosted bridge that exposes your Interactive
     Brokers account over the
