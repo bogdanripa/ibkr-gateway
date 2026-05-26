@@ -10,6 +10,7 @@ import express from "express";
 import { config } from "./config.js";
 import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
+import { homeHtml } from "./home.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
 import { mcpHelpHtml } from "./help/mcp.js";
@@ -42,8 +43,14 @@ app.get("/help/mcp", (_req, res) => {
 });
 app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
 
-// Console UI: serve the single HTML on / and on /console*.
-app.get(["/", "/console", "/console/*splat"], (_req, res) => {
+// Public marketing homepage — plain HTML, no JS, no auth. Visitors who
+// click "Sign in" land in /console which boots the SPA.
+app.get("/", (_req, res) => {
+  res.type("html").send(homeHtml());
+});
+
+// Console SPA — single HTML on /console*.
+app.get(["/console", "/console/*splat"], (_req, res) => {
   res.type("html").send(consoleHtml());
 });
 
