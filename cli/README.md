@@ -1,163 +1,128 @@
-# `cli/` — a JVM-free Node port of the IBKR Client Portal Gateway
+# `cli/` — interactive CLI on top of the IBKR client module
 
-A single Node class (`IbkrClient`) that talks directly to the IBKR
-Client Portal Web API using the same session protocol the Java Client
-Portal Gateway uses internally — no JVM, no IBeam.
+A menu-driven Node CLI that talks to IBKR via the reusable module at
+[`../lib/ibkr/`](../lib/ibkr/). No JVM, no IBeam — just Node + Playwright
+for the browser-mediated login.
 
-Background on **how** the protocol works and **why** see
-[`../docs/cpg-protocol.md`](../docs/cpg-protocol.md).
+## Strict layering
+
+| Layer | Lives in | Knows about |
+|---|---|---|
+| **Module** (reusable) | [`lib/ibkr/`](../lib/ibkr/) | HTTP, cookies, IBKR protocol. No CLI, no readline, no `process.exit`. |
+| **CLI** | [`cli/ibkr.js`](./ibkr.js) | Menus, prompts, formatting, persistence of state to `~/.ibkr-cli/session.json`. |
+| **CLI helpers** | [`cli/lib/`](./lib/) | `prompt.js` (readline wrappers), `session-file.js` (state ↔ disk). |
+
+The same module will be imported by the planned web gateway — see
+[`../docs/cpg-protocol.md`](../docs/cpg-protocol.md) for the wire-level
+spec.
 
 ## Setup
 
 ```bash
-npm install                      # pulls playwright (~6 MB)
-npx playwright install chromium  # one-time Chromium download (~170 MB)
+npm install                      # installs playwright
+npx playwright install chromium  # one-time, ~170 MB
 ```
 
-## CLI usage
+## Usage
 
 ```bash
-# Login — paper or live (default live). State persisted at ~/.ibkr-cli/session.json.
-node cli/login.js --mode paper
-node cli/login.js --mode live --headed             # visible Chromium (2FA / debug)
-IBKR_USERNAME=u IBKR_PASSWORD=p node cli/login.js  # non-interactive
-
-# List / pick your working account (only needed if you have >1):
-node cli/accounts.js list
-node cli/accounts.js set DUQ443672      # persists into session.json
-node cli/accounts.js current
-node cli/accounts.js unset
-
-# Read positions + cash:
-node cli/positions.js                   # current account (or the only one)
-node cli/positions.js --account DUQ443672
-node cli/positions.js --all             # every account
-
-# Place orders:
-node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT --yes
-node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type LMT --limit 150
-node cli/place-order.js --conid 265598 --side SELL --qty 1 --type MKT --outside-rth
-
-# Order management:
-node cli/orders.js list
-node cli/orders.js list --status Filled,PreSubmitted
-node cli/orders.js status 1194667540
-node cli/orders.js cancel 1194667540
+node cli/ibkr.js
 ```
 
-## Library usage
+Flow:
 
-`IbkrClient` is a single class. State lives on the instance; you choose
-how to persist it (file, DB, env). See `cli/lib/client.js` for the full
-API; here's the shape:
+1. If `~/.ibkr-cli/session.json` exists, asks whether to reuse.
+2. Otherwise prompts for mode (paper/live), username, password (masked),
+   and whether to open the browser visibly (needed if your account
+   requires IBKey 2FA push).
+3. Drops into the top-level menu:
 
-```js
-import { IbkrClient } from './cli/lib/client.js';
-import { loadState, saveState } from './cli/lib/session-file.js'; // optional helper
-
-const c = new IbkrClient({ state: await loadState() });
-
-// 1) sign in (drives Playwright + post-login pipeline)
-const info = await c.signIn({
-  username, password,
-  mode: 'paper',          // 'paper' | 'live'
-  headed: false,
-  onProgress: console.log,
-});
-await saveState(c.getState());
-
-// 2) account / portfolio (multi-account aware)
-const accounts = await c.getAccounts();        // [{accountId, accountTitle, ...}]
-// Single account? Things just work — every method below resolves it
-// implicitly. Multiple accounts? Either pick one once:
-await c.setCurrentAccount('DUQ443672');        // persists into c.getState()
-c.getCurrentAccount();                          // → 'DUQ443672'
-// …or pass `accountId` explicitly to each call. If you call a
-// per-account method while there are >1 accounts and none has been
-// picked, you'll get an IbkrError with stage 'no-account-selected'
-// and body.accounts listing the choices.
-
-const snapshot = await c.getPositions();       // implicit current/single
-const other = await c.getPositions('U7654321');
-// → { accountId, brokerageAccess, stocks, options, other, cash }
-
-const cash = await c.getCash(acct);
-// → [{ ccy, cash, netLiq, unrealizedPnl, realizedPnl, excessLiq, settledCash }]
-
-// 3) orders
-await c.ensureBrokerage();    // make sure iserver bridge is up
-
-const placed = await c.placeOrder({
-  accountId: acct,
-  symbol: 'AAPL',             // OR conid: 265598
-  side: 'BUY',
-  quantity: 1,
-  orderType: 'MKT',           // 'MKT' | 'LMT' | 'STP' | 'STP_LIMIT' | 'MIT' | …
-  // limitPrice: 150,         // for LMT / STP_LIMIT
-  // stopPrice: 145,          // for STP / STP_LIMIT
-  tif: 'DAY',                 // 'DAY' | 'GTC' | 'IOC' | 'OPG'
-  outsideRth: false,
-  onConfirm: async ({ message }) => {
-    console.log('IBKR warning:', message);
-    return true;              // return false to abort
-  },
-});
-// → [{ order_id, order_status, ... }]
-
-const orders = await c.getOrders({ status: ['PreSubmitted', 'Submitted'] });
-const status = await c.getOrderStatus('1194667540');
-await c.cancelOrder({ orderId: '1194667540', accountId: acct });
-
-// 4) state plumbing
-const snap = c.getState();    // serialisable plain object
-c.setState(snap);             // restore on next process start
-c.isSignedIn();               // do we have XYZAB cookies?
-
-// 5) session management
-await c.tickle();              // keep-alive
-await c.signOut();             // POST /logout + clear state
+```
+── Main (user=…, account=…) ──
+  1. Positions
+  2. Orders
+  3. Accounts
+  4. Sign out (forget saved session)
+  9. Exit
 ```
 
-### `mode` argument
+**`9` always means "go back" (or "exit" at the top level).**
 
-| `mode`  | Effect |
-|---------|--------|
-| `live`  | Submits with the Live/Paper toggle on Live (the form default). Use for real accounts. |
-| `paper` | Flips the toggle to Paper before submitting. Required for paper-only usernames — without it IBKR returns *"You have selected the Live Account Mode, but the specified user is a Paper Trading user."* |
+Sub-menus:
+
+```
+── Orders ──
+  1. List open orders
+  2. Place new order
+  3. Check order status
+  4. Cancel order
+  9. Back
+```
+
+```
+── Accounts (current=…) ──
+  1. List accounts
+  2. Set current account
+  3. Unset current account
+  9. Back
+```
+
+### Multi-account
+
+If your IBKR user has multiple sub-accounts, pick one via **Accounts →
+Set current account**. The choice persists into `session.json`, and
+every other action uses it implicitly. With a single account this is
+auto-set on sign-in.
+
+### Order placement
+
+The order-entry sub-menu walks you through symbol / side / qty / type
+/ limit / stop / TIF / outside-RTH. IBKR's pre-trade warnings
+("after-hours order", "margin warning", etc.) are surfaced one at a
+time; each is shown verbatim and asked y/N. The order is only
+submitted after a final review screen.
 
 ### 2FA
 
-The login flow is the same as the Java CPG: it doesn't bypass 2FA. For
-IBKey push, run with `headed: true` and tap Approve on your phone
-within the timeout. For code-based 2FA (SCC, SMS), you currently need
-to extend `cli/lib/browser-login.js` to read the code — see the
-selector map in that file's header (`#xyz-field-bronze/silver/gold/temp-response`).
+Same model as the Java CPG: this CLI doesn't bypass 2FA. Answer
+"yes" to "Open browser visibly?" and complete the IBKey push (or
+SCC/SMS code) in the window that appears. After IBKR's success
+redirect, the CLI takes over.
 
-### Account-state notes
+## Scripting
 
-- `result.isPendingApplicant: true` → IBKR application not yet
-  approved. `getPositions()` returns `brokerageAccess: false` and the
-  portfolio endpoints return HTTP 500.
-- `result.brokerage.state: 'unavailable'` → the iserver brokerage
-  handshake failed (typical for pending-applicant accounts). Reading
-  works; `placeOrder()` will fail.
+If you need non-interactive scripting, import the module directly —
+the CLI is just one consumer:
+
+```js
+import { IbkrClient } from '../lib/ibkr/index.js';
+
+const c = new IbkrClient();
+await c.signIn({ username, password, mode: 'paper' });
+console.log(await c.getPositions());
+const r = await c.placeOrder({ symbol: 'AAPL', side: 'BUY', quantity: 1, orderType: 'MKT' });
+console.log(r);
+```
+
+See [`../lib/ibkr/client.js`](../lib/ibkr/client.js) for the full API.
 
 ## File layout
 
 ```
 cli/
-├── login.js              # CLI: sign in
-├── positions.js          # CLI: list positions / cash
-├── place-order.js        # CLI: place a single order
-├── orders.js             # CLI: list / status / cancel orders
-├── accounts.js           # CLI: list / set / unset current account
-└── lib/
-    ├── client.js         # IbkrClient class (all functionality)
-    ├── browser-login.js  # Playwright driver for /sso/Login
-    ├── sso-math.js       # SHA-1, compute_sk, TST derivation
-    └── session-file.js   # ~/.ibkr-cli/session.json helper
+├── ibkr.js                 # the interactive CLI (one entry point)
+├── lib/
+│   ├── prompt.js           # ask / askPassword / yesNo / menu (readline)
+│   └── session-file.js     # ~/.ibkr-cli/session.json load/save/clear
+└── README.md               # this file
 ```
 
-State is persisted to `~/.ibkr-cli/session.json` (mode 0600) by the
-bundled CLIs. Library users use `client.getState()` / `setState()` to
-plug in their own storage.
+The reusable module lives in [`../lib/ibkr/`](../lib/ibkr/):
+
+```
+lib/ibkr/
+├── index.js                # public export — { IbkrClient, IbkrError }
+├── client.js               # IbkrClient class
+├── browser-login.js        # Playwright /sso/Login driver
+└── sso-math.js             # SHA-1, compute_sk, TST derivation
+```
