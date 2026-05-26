@@ -1,63 +1,74 @@
 // Shared chrome for the static help pages.
 // Public — no auth required.
+//
+// The header / footer / colour palette come from src/marketing.ts so
+// the help pages stay visually identical to the homepage at "/". The
+// page-specific styles below cover prose, cards, numbered steps and
+// callouts — content-level concerns the homepage doesn't need.
+
+import {
+  MARKETING_CHROME_CSS,
+  marketingFooterHtml,
+  marketingHeaderHtml,
+} from "../marketing.js";
 
 export interface HelpPage {
-  title: string;       // <title> + h1 in the header
+  title: string;       // <title> + h1 in the page body
   bodyHtml: string;    // the main content (already-escaped HTML)
 }
 
-// Single shared stylesheet — matches src/console/ui.ts so the help
-// pages and the console share a visual identity. Kept inline so the
-// pages remain a single GET with no extra round trip.
-const STYLE = `
-  :root {
-    --bg: #0e0f12;
-    --fg: #e6e7ea;
-    --muted: #888c94;
-    --card: #15171c;
-    --border: #2a2d35;
-    --accent: #5a8df0;
-    --warn: #d39654;
-    --ok: #4fb87a;
+const HELP_CONTENT_CSS = `
+  main { max-width: 760px; margin: 32px auto 0; padding: 0 24px 32px; }
+  main h1 {
+    font-size: 30px; font-weight: 700; margin: 16px 0 24px;
+    letter-spacing: -0.02em; line-height: 1.15;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--fg);
+  main h2 {
+    font-size: 22px; font-weight: 600; margin: 36px 0 10px;
+    letter-spacing: -0.01em;
   }
-  header {
-    padding: 14px 24px;
-    border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  header h1 { font-size: 16px; margin: 0; font-weight: 500; }
-  header a { color: var(--accent); text-decoration: none; margin-left: 16px; font-size: 13px; }
-  main { max-width: 760px; margin: 32px auto; padding: 0 24px 64px; }
-  main h1 { font-size: 24px; font-weight: 600; margin: 0 0 24px; }
-  main h2 { font-size: 17px; font-weight: 600; margin: 32px 0 8px; color: var(--fg); }
-  main h3 { font-size: 15px; font-weight: 600; margin: 20px 0 6px; color: var(--fg); }
-  main p { margin: 8px 0 12px; }
-  main ul, main ol { margin: 8px 0 12px; padding-left: 24px; }
+  main h3 { font-size: 16px; font-weight: 600; margin: 22px 0 6px; }
+  main p { margin: 8px 0 12px; color: #d6d9de; }
+  main ul, main ol { margin: 8px 0 12px; padding-left: 24px; color: #d6d9de; }
   main li { margin: 4px 0; }
-  main a { color: var(--accent); }
-  main code { background: var(--card); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
-  main .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; margin: 16px 0; }
-  main .note { border-left: 3px solid var(--warn); padding: 10px 14px; background: rgba(211,150,84,0.06); border-radius: 0 6px 6px 0; margin: 12px 0; }
-  main .ok   { border-left: 3px solid var(--ok);   padding: 10px 14px; background: rgba(79,184,122,0.06); border-radius: 0 6px 6px 0; margin: 12px 0; }
-  main .step { margin: 10px 0 14px; padding-left: 32px; position: relative; }
+
+  main .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 18px; margin: 16px 0;
+    overflow-x: auto;
+  }
+  main .note {
+    border-left: 3px solid var(--warn);
+    padding: 10px 14px; background: rgba(211,150,84,0.08);
+    border-radius: 0 6px 6px 0; margin: 14px 0;
+  }
+  main .ok {
+    border-left: 3px solid var(--ok);
+    padding: 10px 14px; background: rgba(74,222,128,0.08);
+    border-radius: 0 6px 6px 0; margin: 14px 0;
+  }
+  main .step { margin: 10px 0 14px; padding-left: 36px; position: relative; }
   main .step::before {
     content: counter(step);
     counter-increment: step;
     position: absolute; left: 0; top: 1px;
-    width: 22px; height: 22px; line-height: 22px;
+    width: 24px; height: 24px; line-height: 24px;
     background: var(--accent); color: #fff; border-radius: 50%;
     text-align: center; font-size: 12px; font-weight: 600;
   }
   main .steps { counter-reset: step; }
   main hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
   main .muted { color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 720px) {
+    main { padding: 0 16px 24px; margin-top: 20px; }
+    main h1 { font-size: 26px; }
+    main h2 { font-size: 19px; margin-top: 28px; }
+    main h3 { font-size: 15px; }
+    main .card { padding: 14px; }
+    main .step { padding-left: 32px; }
+    main .step::before { width: 22px; height: 22px; line-height: 22px; }
+  }
 `;
 
 export function renderHelpPage(page: HelpPage): string {
@@ -67,21 +78,18 @@ export function renderHelpPage(page: HelpPage): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${page.title} — IBKR Gateway</title>
-<style>${STYLE}</style>
+<meta name="robots" content="index, follow" />
+<style>
+${MARKETING_CHROME_CSS}
+${HELP_CONTENT_CSS}
+</style>
 </head>
 <body>
-<header>
-  <h1>IBKR Gateway</h1>
-  <nav>
-    <a href="/help/paper-account">Paper accounts</a>
-    <a href="/help/authenticator-app">Authenticator App</a>
-    <a href="/help/mcp">Connect Claude (MCP)</a>
-    <a href="/console">Console</a>
-  </nav>
-</header>
+${marketingHeaderHtml()}
 <main>
 ${page.bodyHtml}
 </main>
+${marketingFooterHtml()}
 </body>
 </html>`;
 }

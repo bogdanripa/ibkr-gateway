@@ -20,8 +20,12 @@
 //   · `<link rel="canonical">` and a stable robots policy.
 
 import { config } from "./config.js";
-
-const REPO_URL = "https://github.com/bogdanripa/ibkr-gateway";
+import {
+  MARKETING_CHROME_CSS,
+  REPO_URL,
+  marketingFooterHtml,
+  marketingHeaderHtml,
+} from "./marketing.js";
 
 export function homeHtml(): string {
   const origin = config.publicOrigin;
@@ -133,53 +137,7 @@ export function homeHtml(): string {
 <script type="application/ld+json">${jsonLd}</script>
 
 <style>
-  :root {
-    --bg: #0b0d10;
-    --card: #14181d;
-    --border: #2a3038;
-    --text: #e8eaed;
-    --muted: #9aa3ad;
-    --accent: #5b8def;
-    --ok: #4ade80;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: var(--text);
-    background:
-      radial-gradient(800px 400px at 50% -10%, rgba(91, 141, 239, 0.18), transparent 60%),
-      var(--bg);
-    min-height: 100vh;
-  }
-  a { color: var(--accent); }
-  code {
-    background: var(--card);
-    border: 1px solid var(--border);
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 0.92em;
-  }
-  header.site {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 28px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(11, 13, 16, 0.7);
-    backdrop-filter: saturate(150%) blur(8px);
-    position: sticky; top: 0; z-index: 10;
-  }
-  header.site .brand {
-    font-weight: 600; font-size: 16px; letter-spacing: 0.02em;
-  }
-  header.site nav a {
-    margin-left: 18px; font-size: 14px; text-decoration: none; color: var(--muted);
-  }
-  header.site nav a:hover { color: var(--text); }
-  header.site nav a.cta {
-    color: var(--text); background: var(--accent);
-    padding: 8px 14px; border-radius: 8px; font-weight: 500;
-  }
-  header.site nav a.cta:hover { filter: brightness(1.1); }
+  ${MARKETING_CHROME_CSS}
 
   main { max-width: 880px; margin: 0 auto; padding: 0 24px; }
   section { padding: 64px 0; border-bottom: 1px solid var(--border); }
@@ -225,11 +183,6 @@ export function homeHtml(): string {
   }
   .card h3 { margin-top: 0; }
 
-  pre {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px 16px; overflow-x: auto;
-    font-size: 13px; line-height: 1.5;
-  }
   ul, ol { padding-left: 22px; margin: 8px 0 14px; color: #d6d9de; }
   li { margin: 4px 0; }
   details {
@@ -239,32 +192,25 @@ export function homeHtml(): string {
   details summary { cursor: pointer; font-weight: 500; }
   details[open] summary { margin-bottom: 8px; }
 
-  footer.site {
-    padding: 28px 24px 48px; text-align: center;
-    color: var(--muted); font-size: 13px;
-    border-top: 1px solid var(--border);
-  }
-  footer.site a { color: var(--muted); margin: 0 8px; }
-
-  @media (max-width: 640px) {
-    h1 { font-size: 32px; }
-    .hero { padding-top: 48px; }
-    section { padding: 48px 0; }
+  @media (max-width: 720px) {
+    main { padding: 0 16px; }
+    h1 { font-size: 30px; }
+    h1 br { display: none; }
+    h2 { font-size: 22px; }
+    .lead { font-size: 17px; }
+    .hero { padding-top: 36px; padding-bottom: 36px; }
+    section { padding: 40px 0; }
+    .btn { padding: 11px 16px; font-size: 14px; }
+    .hero .actions .btn { width: 100%; text-align: center; }
+    .card { padding: 16px; }
+    .tldr { padding: 12px 14px; font-size: 14px; }
+    details { padding: 12px 14px; }
   }
 </style>
 </head>
 <body>
 
-<header class="site">
-  <div class="brand">IBKR Gateway</div>
-  <nav>
-    <a href="/help/mcp">Docs</a>
-    <a href="${escapeHtml(REPO_URL)}" target="_blank" rel="noopener">GitHub</a>
-    <a href="/help/paper-account">Paper accounts</a>
-    <a href="/help/authenticator-app">Live setup</a>
-    <a class="cta" href="/console">Sign in</a>
-  </nav>
-</header>
+${marketingHeaderHtml()}
 
 <main>
 
@@ -581,16 +527,7 @@ export function homeHtml(): string {
 
 </main>
 
-<footer class="site">
-  <a href="/help/mcp">MCP setup</a> ·
-  <a href="/help/paper-account">Paper accounts</a> ·
-  <a href="/help/authenticator-app">Live setup</a> ·
-  <a href="/console">Console</a>
-  <p style="margin-top:14px;">
-    IBKR Gateway is an independent project. Not affiliated with
-    Interactive Brokers.
-  </p>
-</footer>
+${marketingFooterHtml()}
 
 </body>
 </html>`;
