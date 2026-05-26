@@ -1,41 +1,23 @@
 #!/usr/bin/env node
-// `node cli/place-order.js`  — place a single equity order.
-//
-// Usage:
-//   node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT
-//   node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type LMT --limit 150
-//   node cli/place-order.js --conid 265598 --side SELL --qty 1 --type MKT
-//
-// Optional flags:
-//   --account DUQ443672    explicit accountId; otherwise the first
-//                          account from /portfolio/accounts is used.
-//   --tif DAY              DAY | GTC | IOC | OPG          (default DAY)
-//   --stop 145             stop price (for STP / STP_LIMIT)
-//   --outside-rth          allow execution outside regular hours
-//   --yes                  auto-confirm any IBKR warning prompts
-//                          (otherwise the CLI shows each prompt and
-//                          asks y/N).
-//
-// Requires `node cli/login.js` to have produced a brokerage-active
-// session (`iserver: authenticated=true`). Pending-application paper
-// accounts cannot place orders.
+// `node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT [...]`
 
 import { argv, exit, stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
-import { loadSession, saveSession, sessionPath } from './lib/session.js';
-import { api, portalUrl } from './lib/api.js';
-import { ensureBrokerage } from './lib/auth.js';
-import { placeOrder } from './lib/orders.js';
+import { IbkrClient } from './lib/client.js';
+import { loadState, saveState, sessionPath } from './lib/session-file.js';
 
-function flag(name) {
+const flag = (name) => {
   const i = argv.indexOf('--' + name);
   if (i < 0) return undefined;
-  // Value-less switches.
   if (name === 'outside-rth' || name === 'yes') return true;
   return argv[i + 1];
-}
+};
+const usage = () => {
+  console.error('usage: node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT [--limit P] [--stop P] [--tif DAY|GTC|IOC|OPG] [--outside-rth] [--account ID] [--yes]');
+  exit(2);
+};
 
-const params = {
+const opts = {
   conid: flag('conid') ? Number(flag('conid')) : undefined,
   symbol: flag('symbol'),
   side: flag('side'),
@@ -45,71 +27,42 @@ const params = {
   stopPrice: flag('stop') !== undefined ? Number(flag('stop')) : undefined,
   tif: flag('tif') || 'DAY',
   outsideRth: !!flag('outside-rth'),
+  accountId: flag('account'),
 };
-const explicitAccount = flag('account');
 const autoYes = !!flag('yes');
+if (!opts.side || !opts.quantity || !opts.orderType || (!opts.symbol && !opts.conid)) usage();
 
-if (!params.side || !params.quantity || !params.orderType || (!params.symbol && !params.conid)) {
-  console.error('usage: node cli/place-order.js --symbol AAPL --side BUY --qty 1 --type MKT');
-  console.error('       (see header comment for full flag list)');
-  exit(2);
-}
+const state = await loadState();
+if (!state) { console.error(`no session at ${sessionPath()} — run \`node cli/login.js\` first`); exit(2); }
+const client = new IbkrClient({ state });
+if (!client.isSignedIn()) { console.error('session has no cookies — re-run login'); exit(2); }
+if (state.isPendingApplicant) { console.error('⚠  pending-application account — orders unavailable'); exit(1); }
 
-const session = await loadSession();
-if (!session.cookies?.XYZAB && !session.cookies?.['XYZAB_AM.LOGIN']) {
-  console.error(`no session at ${sessionPath()} — run \`node cli/login.js\` first`);
-  exit(2);
-}
-if (session.isPendingApplicant) {
-  console.error('⚠  account is in PENDING-APPLICATION state — order placement is not available.');
-  exit(1);
-}
-
-// The iserver brokerage tier drops on idle; bring it back up if needed.
 try {
   console.error('  · ensuring brokerage tier is up');
-  const st = await ensureBrokerage(session);
-  await saveSession(session);
+  const st = await client.ensureBrokerage();
   console.error(`  · iserver: authenticated=${st.authenticated} connected=${st.connected}`);
+  await saveState(client.getState());
 } catch (e) {
   console.error('✗ could not establish brokerage tier: ' + (e.message || e));
   console.error('  re-run `node cli/login.js` to refresh cookies');
   exit(1);
 }
 
-// Resolve accountId.
-let accountId = explicitAccount;
-if (!accountId) {
-  const r = await api.get(session, portalUrl(session, 'portfolio/accounts'));
-  if (r.status !== 200 || !Array.isArray(r.data) || !r.data.length) {
-    console.error(`/portfolio/accounts → HTTP ${r.status}: ${r.text.slice(0, 200)}`);
-    exit(1);
-  }
-  accountId = r.data[0].accountId || r.data[0].id;
-}
-console.error(`account: ${accountId}`);
-
-// Confirmation handler — by default we *show* each IBKR warning and
-// only proceed on y/Y (or auto with --yes). This is a real-world
-// trade — be explicit.
-async function onConfirm({ id, message }) {
+const onConfirm = async ({ message }) => {
   console.error('\nIBKR confirmation prompt:');
   for (const line of message.split('\n')) console.error('  ' + line);
   if (autoYes) { console.error('  → auto-confirming (--yes)'); return true; }
-  if (!stdin.isTTY) {
-    console.error('  → no TTY and no --yes; treating as cancelled');
-    return false;
-  }
+  if (!stdin.isTTY) { console.error('  → no TTY and no --yes; cancelling'); return false; }
   const rl = createInterface({ input: stdin, output: stdout });
-  const ans = (await rl.question(`confirm [y/N]? `)).trim();
+  const ans = (await rl.question('confirm [y/N]? ')).trim();
   rl.close();
   return /^y(es)?$/i.test(ans);
-}
+};
 
 try {
-  const result = await placeOrder(session, {
-    accountId,
-    ...params,
+  const result = await client.placeOrder({
+    ...opts,
     onConfirm,
     onProgress: (m) => console.error('  · ' + m),
   });
