@@ -243,11 +243,40 @@ async function placeOrder(client) {
       },
       onProgress: (m) => p.step(m),
     });
-    p.succeed(`order placed (${result.length} response row${result.length === 1 ? '' : 's'})`);
-    for (const r of result) console.log('   ' + JSON.stringify(r));
+    const desc = orderSummary({ side, quantity, symbol, orderType, limitPrice, stopPrice, tif, outsideRth });
+    p.succeed('order placed');
+    for (const r of result) printOrderResultRow(r, desc);
   } catch (e) {
     p.fail(humanError(e));
   }
+}
+
+const ORDER_STATUS_NOTE = {
+  PreSubmitted: 'queued — IBKR will release it when market opens / conditions are met',
+  Submitted:    'live in the order book',
+  Filled:       'fully executed',
+  Cancelled:    'cancelled (by you or IBKR)',
+  Rejected:     'rejected — see the message above',
+  Inactive:     'not transmitted (e.g. queued for next session)',
+};
+
+function orderSummary({ side, quantity, symbol, orderType, limitPrice, stopPrice, tif, outsideRth }) {
+  let s = `${side} ${quantity} ${symbol} ${orderType}`;
+  if (limitPrice != null) s += ` @ ${limitPrice}`;
+  if (stopPrice != null) s += ` stop ${stopPrice}`;
+  s += `, ${tif}`;
+  if (outsideRth) s += ', outside-RTH';
+  return s;
+}
+
+function printOrderResultRow(r, desc) {
+  if (!r) { console.log('   (empty response)'); return; }
+  const status = r.order_status || r.order_state || 'unknown';
+  const id = r.order_id || r.orderId || r.local_order_id || '?';
+  console.log(`   ${'Order ID'.padEnd(10)} ${id}`);
+  if (desc)            console.log(`   ${'Action'.padEnd(10)} ${desc}`);
+  console.log(`   ${'Status'.padEnd(10)} ${status}` + (ORDER_STATUS_NOTE[status] ? `  — ${ORDER_STATUS_NOTE[status]}` : ''));
+  if (r.warning_message) console.log(`   ${'Warning'.padEnd(10)} ${r.warning_message}`);
 }
 
 // ----- quote ----------------------------------------------------------
@@ -290,11 +319,32 @@ async function pickSecurity(client) {
     console.log(`  ${String(i + 1).padStart(2)}. ${sym} ${desc} ${sectypes}`);
   });
   if (list.length > shown.length) console.log(`  (… and ${list.length - shown.length} more)`);
-  const pick = await ask('Pick number (or Enter to cancel): ');
+  // Accept either a row number (1..N) or a ticker symbol from the
+  // list above. Symbol match is case-insensitive and tried first
+  // against the visible page, then the full list.
+  const pick = (await ask('Pick number or ticker (Enter to cancel): ')).trim();
   if (!pick) return null;
-  const idx = Number(pick) - 1;
-  if (Number.isNaN(idx) || idx < 0 || idx >= list.length) { console.log('invalid choice'); return null; }
-  return list[idx];
+  if (/^\d+$/.test(pick)) {
+    const idx = Number(pick) - 1;
+    if (idx < 0 || idx >= list.length) { console.log('invalid choice'); return null; }
+    return list[idx];
+  }
+  const up = pick.toUpperCase();
+  const exact = (rows) => rows.find((r) => (r?.symbol || '').toUpperCase() === up);
+  const found = exact(shown) || exact(list);
+  if (found) return found;
+  // If the typed ticker is unambiguous but wasn't in the list (rare),
+  // fall back to a fresh secdef/search.
+  try {
+    const fresh = await client.searchSecurity(pick);
+    if (fresh.length === 1) return fresh[0];
+    if (fresh.length > 1) {
+      const stk = fresh.find((r) => r.sections.some((s) => s.secType === 'STK')) || fresh[0];
+      return stk;
+    }
+  } catch { /* swallow */ }
+  console.log(`no row with ticker '${pick}'`);
+  return null;
 }
 
 async function showQuote(client) {
