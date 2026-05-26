@@ -72,11 +72,31 @@ export function askPassword(question) {
       stdin.removeListener('data', onData);
       stdin.pause();
     };
-    const onData = (ch) => {
-      if (ch === '') { cleanup(); stdout.write('\n'); reject(new Error('cancelled')); return; }
-      if (ch === '\r' || ch === '\n') { cleanup(); stdout.write('\n'); resolve(buf); return; }
-      if (ch === '' || ch === '\b') { if (buf.length) { buf = buf.slice(0, -1); stdout.write('\b \b'); } return; }
-      buf += ch; stdout.write('*');
+    // In raw mode a paste arrives as a single 'data' event whose value
+    // is the entire pasted string (potentially with an embedded \r or
+    // \n at the end if the clipboard had a trailing newline). We must
+    // iterate the chunk char-by-char so we echo one `*` per character
+    // (not per event) and so an embedded newline mid-chunk submits at
+    // the right spot.
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        const code = ch.charCodeAt(0);
+        if (code === 0x03) {            // Ctrl-C
+          cleanup(); stdout.write('\n');
+          reject(new Error('cancelled')); return;
+        }
+        if (ch === '\r' || ch === '\n') {
+          cleanup(); stdout.write('\n');
+          resolve(buf); return;
+        }
+        if (code === 0x7f || ch === '\b') {  // backspace / delete
+          if (buf.length) { buf = buf.slice(0, -1); stdout.write('\b \b'); }
+          continue;
+        }
+        if (code < 0x20) continue;       // ignore other control chars
+        buf += ch;
+        stdout.write('*');
+      }
     };
     stdin.on('data', onData);
   });
