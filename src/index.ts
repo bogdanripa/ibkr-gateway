@@ -2,11 +2,9 @@
 //   /console/api/*   — Firebase-authenticated console backend (api.ts)
 //   /console         — single-page UI (ui.ts)
 //   /help/*          — public static help pages (no auth)
+//   /mcp             — Model Context Protocol server (bearer-key auth)
 //   /healthz         — already served by Caddy ahead of us, but kept here
 //                      for direct localhost checks
-//
-// Trading API endpoints (/v1/*) will be layered on in §11 step 7 once the
-// Supervisor is in place.
 
 import express from "express";
 import { config } from "./config.js";
@@ -14,12 +12,16 @@ import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
+import { mcp } from "./mcp.js";
 
 const app = express();
 app.disable("x-powered-by");
 
 // Console API.
 app.use("/console/api", consoleApi);
+
+// MCP server (bearer-API-key auth; see src/mcp.ts).
+app.use("/mcp", mcp);
 
 // Public help pages (must be registered BEFORE the /* fallback that
 // serves the SPA, otherwise the SPA would shadow them).
