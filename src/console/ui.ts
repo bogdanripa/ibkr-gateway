@@ -386,7 +386,17 @@ const whoEl = $("#who");
 document.getElementById("signin-btn").addEventListener("click", () => signInWithPopup(auth, provider));
 
 let currentUser = null;
-let currentToken = null;
+
+// Always fetch a fresh ID token before each authenticated request.
+// Firebase ID tokens expire after ~1h; capturing the token once in
+// onAuthStateChanged means anything that takes longer (or anyone who
+// leaves the tab open) hits 401 "invalid token" from /console/api/*.
+// getIdToken() caches internally and only round-trips when the cached
+// token is within ~5 minutes of expiry, so this is cheap.
+async function freshToken() {
+  if (!auth.currentUser) throw new Error("not signed in");
+  return await auth.currentUser.getIdToken();
+}
 
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
@@ -395,7 +405,6 @@ onAuthStateChanged(auth, async (user) => {
     renderSignin();
     return;
   }
-  currentToken = await user.getIdToken();
   whoEl.innerHTML = \`<span>\${escapeHtml(user.email)}</span> <button class="subtle" id="signout">Sign out</button>\`;
   document.getElementById("signout").addEventListener("click", () => signOut(auth));
   renderApp();
@@ -404,10 +413,11 @@ onAuthStateChanged(auth, async (user) => {
 // ----------------------- HTTP helper -----------------------
 
 async function api(method, path, body) {
+  const token = await freshToken();
   const resp = await fetch("/console/api" + path, {
     method,
     headers: {
-      "Authorization": "Bearer " + currentToken,
+      "Authorization": "Bearer " + token,
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -842,7 +852,7 @@ function wireConnection(div, c) {
     try {
       const resp = await withLoading(btn, "Loading…", async () => {
         const r = await fetch("/console/api/connections/" + c.id + "/positions", {
-          headers: { "Authorization": "Bearer " + currentToken },
+          headers: { "Authorization": "Bearer " + (await freshToken()) },
         });
         return { ok: r.ok, data: await r.json() };
       });
@@ -1028,7 +1038,7 @@ async function runTest(div, c) {
     let resp = await withLoading(btn, "Testing…", async () => {
       const r = await fetch("/console/api/connections/" + c.id + "/test", {
         method: "POST",
-        headers: { "Authorization": "Bearer " + currentToken },
+        headers: { "Authorization": "Bearer " + (await freshToken()) },
       });
       return { status: r.status, ok: r.ok, data: await r.json() };
     });
@@ -1043,11 +1053,13 @@ async function runTest(div, c) {
       if (!code) {
         // Tell the gateway to abort the parked sign-in (null body),
         // best-effort, then bail with a friendly notice.
-        fetch("/console/api/connections/" + c.id + "/verify", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + currentToken, "Content-Type": "application/json" },
-          body: JSON.stringify({ email_code: "" }),
-        }).catch(() => {});
+        freshToken().then((tok) =>
+          fetch("/console/api/connections/" + c.id + "/verify", {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + tok, "Content-Type": "application/json" },
+            body: JSON.stringify({ email_code: "" }),
+          }),
+        ).catch(() => {});
         renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
         return;
       }
@@ -1055,7 +1067,7 @@ async function runTest(div, c) {
         const r = await fetch("/console/api/connections/" + c.id + "/verify", {
           method: "POST",
           headers: {
-            "Authorization": "Bearer " + currentToken,
+            "Authorization": "Bearer " + (await freshToken()),
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ email_code: code }),
