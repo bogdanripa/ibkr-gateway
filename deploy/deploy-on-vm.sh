@@ -73,7 +73,17 @@ log "ensuring Playwright Chromium + headless-shell are installed"
 # headless mode (the default) it spawns chrome-headless-shell, which
 # is a separate download. Install both so either mode works without
 # fishing for an executable at first signIn.
-( cd "$NEW_DIR" && sudo npx --yes playwright install chromium chromium-headless-shell )
+#
+# PLAYWRIGHT_BROWSERS_PATH pins a single absolute path used by both
+# `install` and the systemd-run service. Without it, sudo preserves
+# the calling user's $HOME so playwright installs under
+# /home/<sshuser>/.cache, then systemd-as-root looks under /root/.cache
+# and finds nothing — exactly the bug that caused the first live
+# signIn attempt to fail with "Executable doesn't exist".
+PW_BROWSERS_PATH=/opt/ms-playwright
+sudo mkdir -p "$PW_BROWSERS_PATH"
+( cd "$NEW_DIR" && sudo env "PLAYWRIGHT_BROWSERS_PATH=$PW_BROWSERS_PATH" \
+    npx --yes playwright install chromium chromium-headless-shell )
 
 # 3. Atomic swap.
 if [[ -d "$APP_DIR" ]]; then
@@ -92,6 +102,7 @@ log "writing /etc/ibkr-gateway.env"
 sudo tee /etc/ibkr-gateway.env >/dev/null <<EOF
 GCP_PROJECT_ID=${GCP_PROJECT_ID:-auto-trader-493814}
 PORT=8080
+PLAYWRIGHT_BROWSERS_PATH=${PW_BROWSERS_PATH}
 FIREBASE_API_KEY=${FIREBASE_API_KEY:-}
 FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-}
 FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
