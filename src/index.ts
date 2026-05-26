@@ -12,6 +12,7 @@ import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
+import { mcpHelpHtml } from "./help/mcp.js";
 import { mcp } from "./mcp.js";
 import { oauth } from "./oauth.js";
 
@@ -35,6 +36,9 @@ app.get("/help/paper-account", (_req, res) => {
 });
 app.get("/help/authenticator-app", (_req, res) => {
   res.type("html").send(authenticatorAppHtml());
+});
+app.get("/help/mcp", (_req, res) => {
+  res.type("html").send(mcpHelpHtml());
 });
 app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
 

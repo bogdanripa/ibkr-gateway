@@ -349,13 +349,20 @@ export function consoleHtml(): string {
   <div class="signin">
     <div class="card">
       <h2>Welcome</h2>
-      <p>Sign in with your Google account to manage your IBKR connections.</p>
+      <p>
+        A bridge between Interactive Brokers and the rest of your stack.
+        Sign in to add IBKR connections, then plug Claude, Cursor, or
+        any MCP-compatible tool into them — read-only or read &amp; write,
+        you choose per app.
+      </p>
       <button id="signin-btn">Sign in with Google</button>
       <p style="margin-top:18px; font-size:12px;">
-        First time?
-        <a href="/help/paper-account" style="color:var(--accent);">How paper accounts work</a>
+        New here?
+        <a href="/help/mcp" style="color:var(--accent);">Connect Claude (MCP)</a>
         ·
-        <a href="/help/authenticator-app" style="color:var(--accent);">Live setup (Authenticator App)</a>
+        <a href="/help/paper-account" style="color:var(--accent);">Paper accounts</a>
+        ·
+        <a href="/help/authenticator-app" style="color:var(--accent);">Live setup</a>
       </p>
     </div>
   </div>
@@ -630,13 +637,20 @@ function renderSignin() {
     <div class="signin">
       <div class="card">
         <h2>Welcome</h2>
-        <p>Sign in with your Google account to manage your IBKR connections.</p>
+        <p>
+          A bridge between Interactive Brokers and the rest of your stack.
+          Sign in to add IBKR connections, then plug Claude, Cursor, or
+          any MCP-compatible tool into them — read-only or read &amp; write,
+          you choose per app.
+        </p>
         <button id="signin-btn">Sign in with Google</button>
         <p style="margin-top:18px; font-size:12px;">
-          First time?
-          <a href="/help/paper-account" style="color:var(--accent);">How paper accounts work</a>
+          New here?
+          <a href="/help/mcp" style="color:var(--accent);">Connect Claude (MCP)</a>
           ·
-          <a href="/help/authenticator-app" style="color:var(--accent);">Live setup (Authenticator App)</a>
+          <a href="/help/paper-account" style="color:var(--accent);">Paper accounts</a>
+          ·
+          <a href="/help/authenticator-app" style="color:var(--accent);">Live setup</a>
         </p>
       </div>
     </div>\`;
@@ -668,6 +682,11 @@ function renderDashboard(me, connections) {
     <section>
       <h2>Your IBKR connections</h2>
       <div id="conns"></div>
+      <p class="muted" style="font-size:12px; margin-top:8px;">
+        Want to use these from Claude or Cursor?
+        <a href="/help/mcp" style="color:var(--accent);">See the MCP setup guide</a>
+        — the server is at <code>\${escapeHtml(location.origin)}/mcp</code>.
+      </p>
     </section>
 
     <section>
