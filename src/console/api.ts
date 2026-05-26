@@ -217,6 +217,27 @@ consoleApi.post("/connections/:id/test", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Positions — a read-only deep smoke that exercises everything the
+// gateway's runtime path does: session load → tickle/signIn → portfolio
+// fetch. The UI exposes this as a button next to Test.
+// ---------------------------------------------------------------------------
+
+consoleApi.get("/connections/:id/positions", async (req, res) => {
+  const conn = await loadOwnedConnection(req, res);
+  if (!conn) return;
+  try {
+    const snapshot = await withClient(conn.id, async (client) => client.getPositions());
+    res.json({ ok: true, snapshot });
+  } catch (err) {
+    if (err instanceof CredentialRejectedError) {
+      res.status(400).json({ ok: false, code: "CREDENTIAL_REJECTED", error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // API keys
 // ---------------------------------------------------------------------------
 

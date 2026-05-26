@@ -760,6 +760,12 @@ function renderConnection(c) {
       </div>
       <div class="row actions">
         <button data-act="test">Test</button>
+        <button class="ghost" data-act="positions"
+          \${c.credential_status === "valid" ? "" : "disabled"}
+          title="\${c.credential_status === "valid"
+            ? "Fetch portfolio snapshot — proves the runtime path end-to-end"
+            : "Test the connection first to enable"}"
+        >Positions</button>
         <button class="ghost" data-act="rotate">Update credentials</button>
         <button class="danger" data-act="delete">Delete</button>
       </div>
@@ -784,7 +790,7 @@ function wireConnection(div, c) {
 
   div.querySelector('[data-act="test"]').addEventListener("click", async () => {
     const btn = div.querySelector('[data-act="test"]');
-    div.querySelectorAll(".test-result").forEach((n) => n.remove());
+    div.querySelectorAll(".test-result, .positions-panel").forEach((n) => n.remove());
     try {
       const resp = await withLoading(btn, "Testing…", async () => {
         const r = await fetch("/console/api/connections/" + c.id + "/test", {
@@ -795,10 +801,42 @@ function wireConnection(div, c) {
       });
       renderTestResult(div, resp.data, resp.ok);
       updateConnectionBadge(div, resp.ok ? "valid" : "rejected", c);
+      // Enable / disable the Positions button to reflect the new state.
+      const posBtn = div.querySelector('[data-act="positions"]');
+      if (posBtn) {
+        if (resp.ok) {
+          posBtn.removeAttribute("disabled");
+          posBtn.title = "Fetch portfolio snapshot — proves the runtime path end-to-end";
+          c.credential_status = "valid";
+        } else {
+          posBtn.setAttribute("disabled", "");
+          posBtn.title = "Test the connection first to enable";
+          c.credential_status = "rejected";
+        }
+      }
       if (resp.ok) toast("Authenticated", "ok");
     } catch (err) {
       renderTestResult(div, { error: err.message }, false);
       toast("Test failed", "bad");
+    }
+  });
+
+  div.querySelector('[data-act="positions"]').addEventListener("click", async () => {
+    const btn = div.querySelector('[data-act="positions"]');
+    if (btn.hasAttribute("disabled")) return;
+    div.querySelectorAll(".positions-panel, .test-result").forEach((n) => n.remove());
+    try {
+      const resp = await withLoading(btn, "Loading…", async () => {
+        const r = await fetch("/console/api/connections/" + c.id + "/positions", {
+          headers: { "Authorization": "Bearer " + currentToken },
+        });
+        return { ok: r.ok, data: await r.json() };
+      });
+      renderPositionsPanel(div, resp.data, resp.ok);
+      if (resp.ok) toast("Positions loaded", "ok");
+    } catch (err) {
+      renderPositionsPanel(div, { error: err.message }, false);
+      toast("Couldn't load positions", "bad");
     }
   });
 
@@ -979,6 +1017,101 @@ function renderTestResult(div, data, ok) {
     panel.innerHTML = '<strong class="bad">✗ ' + escapeHtml(data.code || "Test failed") + '</strong><br>' +
       '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>';
   }
+  div.querySelector(".conn-body").prepend(panel);
+}
+
+function renderPositionsPanel(div, data, ok) {
+  const panel = document.createElement("div");
+  panel.className = "positions-panel";
+  if (!ok) {
+    panel.classList.add("test-result", "bad");
+    panel.innerHTML = '<strong class="bad">✗ ' + escapeHtml(data.code || "Positions fetch failed") + '</strong><br>' +
+      '<span class="muted">' + escapeHtml(data.error || "Unknown error.") + '</span>';
+    div.querySelector(".conn-body").prepend(panel);
+    return;
+  }
+
+  const s = data.snapshot || {};
+  const stocks  = s.stocks  || [];
+  const options = s.options || [];
+  const other   = s.other   || {};
+  const cash    = (s.cash || []).filter((r) => Number(r.cash) || Number(r.netLiq));
+
+  // Surface partial errors (e.g. paper accounts return 500 on /positions
+  // even when /ledger works), then render whatever did come back.
+  const errs = s.errors || {};
+  const errLines = Object.entries(errs)
+    .map(([k, v]) => '<div class="muted" style="font-size:12px;">' + escapeHtml(k) + ': ' + escapeHtml(String(v)) + '</div>')
+    .join("");
+
+  const fmt = (n, frac = 2) => {
+    if (n == null || isNaN(Number(n))) return "—";
+    return Number(n).toLocaleString("en-US", { minimumFractionDigits: frac, maximumFractionDigits: frac });
+  };
+  const stockTable = (rows) => rows.length === 0 ? '<div class="muted" style="padding:6px 0;">(none)</div>' : \`
+    <table>
+      <thead><tr>
+        <th>Symbol</th><th style="text-align:right">Qty</th>
+        <th style="text-align:right">Avg cost</th><th style="text-align:right">Mkt px</th>
+        <th style="text-align:right">Mkt value</th><th style="text-align:right">P&L</th><th>Ccy</th>
+      </tr></thead>
+      <tbody>
+        \${rows.map((p) => \`
+          <tr>
+            <td>\${escapeHtml(p.contractDesc || p.ticker || "—")}</td>
+            <td style="text-align:right">\${fmt(p.position, 0)}</td>
+            <td style="text-align:right" class="muted">\${fmt(p.avgCost)}</td>
+            <td style="text-align:right" class="muted">\${fmt(p.mktPrice)}</td>
+            <td style="text-align:right">\${fmt(p.mktValue)}</td>
+            <td style="text-align:right">\${fmt(p.unrealizedPnl)}</td>
+            <td class="muted">\${escapeHtml(p.currency || "")}</td>
+          </tr>\`).join("")}
+      </tbody>
+    </table>\`;
+
+  const cashTable = cash.length === 0 ? '<div class="muted" style="padding:6px 0;">(no cash positions)</div>' : \`
+    <table>
+      <thead><tr>
+        <th>Ccy</th>
+        <th style="text-align:right">Cash</th>
+        <th style="text-align:right">Net liq</th>
+        <th style="text-align:right">Unr. P&L</th>
+        <th style="text-align:right">Excess liq</th>
+      </tr></thead>
+      <tbody>
+        \${cash.map((r) => \`
+          <tr>
+            <td>\${escapeHtml(r.ccy === "BASE" ? "Total (base)" : (r.ccy || ""))}</td>
+            <td style="text-align:right">\${fmt(r.cash)}</td>
+            <td style="text-align:right">\${fmt(r.netLiq)}</td>
+            <td style="text-align:right" class="muted">\${fmt(r.unrealizedPnl)}</td>
+            <td style="text-align:right" class="muted">\${fmt(r.excessLiq)}</td>
+          </tr>\`).join("")}
+      </tbody>
+    </table>\`;
+
+  const otherSection = Object.keys(other).length === 0 ? "" :
+    Object.entries(other).map(([k, rows]) => \`
+      <div class="conn-sub-h" style="margin-top:18px;"><span>\${escapeHtml(k)}</span></div>
+      \${stockTable(rows)}
+    \`).join("");
+
+  panel.innerHTML = \`
+    <div class="card" style="margin-top:14px; margin-bottom:0;">
+      <div class="conn-meta-line" style="margin-bottom:4px;">
+        <strong style="color:var(--fg);">Portfolio</strong>
+        \${s.accountId ? '<span>· account <code>' + escapeHtml(s.accountId) + '</code></span>' : ''}
+      </div>
+      \${errLines ? '<div style="margin:6px 0 4px;">' + errLines + '</div>' : ''}
+      <div class="conn-sub-h" style="margin-top:14px;"><span>Stocks</span></div>
+      \${stockTable(stocks)}
+      <div class="conn-sub-h" style="margin-top:18px;"><span>Options</span></div>
+      \${stockTable(options)}
+      \${otherSection}
+      <div class="conn-sub-h" style="margin-top:18px;"><span>Cash</span></div>
+      \${cashTable}
+    </div>
+  \`;
   div.querySelector(".conn-body").prepend(panel);
 }
 
