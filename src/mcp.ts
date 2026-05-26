@@ -427,6 +427,14 @@ const TOOLS: Record<string, ToolDef> = {
   },
 };
 
+function toStructuredContent(result: unknown): Record<string, unknown> | null {
+  if (result == null) return null;
+  if (Array.isArray(result)) return { value: result };
+  if (typeof result === "object") return result as Record<string, unknown>;
+  // Scalars (string / number / boolean) — wrap so the shape is a dict.
+  return { value: result };
+}
+
 function listToolDescriptors(scope: "read" | "write") {
   return Object.entries(TOOLS)
     .filter(([, t]) => scope === "write" || !t.mutating)
@@ -457,10 +465,16 @@ async function callTool(
     // get both: human-readable for chat surfaces, JSON-parseable for
     // programmatic ones. We also include structuredContent (a 2025-spec
     // field) so clients that prefer structured data don't have to parse.
+    //
+    // structuredContent MUST be a JSON object per the spec — Claude.ai's
+    // client enforces this with a strict dict-type check. If a tool
+    // returns an array or scalar (e.g. search_security → array of hits),
+    // wrap it under `{ value }` so the shape is always an object.
     const text = result == null ? "ok" : JSON.stringify(result, null, 2);
+    const structured = toStructuredContent(result);
     return {
       content: [{ type: "text" as const, text }],
-      structuredContent: result ?? null,
+      ...(structured ? { structuredContent: structured } : {}),
     };
   } catch (e) {
     const msg = humanError(e);
