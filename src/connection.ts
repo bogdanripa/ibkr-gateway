@@ -31,8 +31,18 @@ import {
   type SessionDoc,
 } from "./firestore.js";
 import { fetchCredential, type IbkrCredential } from "./secrets.js";
-import { IbkrClient, IbkrError, type IbkrClientState } from "../lib/ibkr/index.js";
+import { IbkrClient, IbkrError, EmailVerificationRequiredError, type IbkrClientState } from "../lib/ibkr/index.js";
 import { logError } from "./logging.js";
+
+export class EmailVerificationNeededError extends Error {
+  constructor(public readonly connectionId: string) {
+    super(
+      `IBKR sent a new-device verification code to the account email for ${connectionId}. ` +
+      `Retry with the 6-digit code from the email.`,
+    );
+    this.name = "EmailVerificationNeededError";
+  }
+}
 
 export class ConnectionNotFoundError extends Error {
   constructor(public readonly connectionId: string) {
@@ -60,9 +70,16 @@ export class CredentialRejectedError extends Error {
  * fail to sign in (the doc's credential_status is set to "rejected"
  * as a side effect).
  */
+export interface WithClientOptions {
+  /** 6-digit code from IBKR's new-device verification email; only
+   *  consulted when a cold sign-in fires the challenge. */
+  emailCode?: string | null;
+}
+
 export async function withClient<T>(
   connectionId: string,
-  fn: (client: IbkrClient) => Promise<T>
+  fn: (client: IbkrClient) => Promise<T>,
+  opts: WithClientOptions = {}
 ): Promise<T> {
   // 1. Load the connection doc — gives us the mode and confirms ownership
   //    chain is sound. Caller is responsible for any account-scoping check.
@@ -93,7 +110,7 @@ export async function withClient<T>(
   }
 
   if (needSignIn) {
-    await signInFresh(client, connectionId, conn);
+    await signInFresh(client, connectionId, conn, opts.emailCode ?? null);
     // Persist the freshly-minted session immediately (before we run fn)
     // so a crash in fn doesn't lose the signIn work.
     await persistState(connectionId, client.getState(), { tickleOk: true });
@@ -127,7 +144,8 @@ export async function withClient<T>(
 async function signInFresh(
   client: IbkrClient,
   connectionId: string,
-  conn: ConnectionDoc
+  conn: ConnectionDoc,
+  emailCode: string | null,
 ): Promise<void> {
   // Fetch the master credentials. The variable is null'd at the end of
   // this function so the plaintext lives in memory only for the
@@ -142,8 +160,16 @@ async function signInFresh(
       password: cred.password,
       mode,
       totpSecret,
+      emailCode,
     });
   } catch (e) {
+    // New-device challenge: bubble up unchanged. Don't mark the
+    // credential as rejected — credentials ARE valid, IBKR just wants
+    // a one-time verification step before completing the sign-in.
+    if (e instanceof EmailVerificationRequiredError) {
+      cred = null; // drop plaintext before throwing across the boundary
+      throw new EmailVerificationNeededError(connectionId);
+    }
     const msg = e instanceof Error ? e.message : String(e);
     // Mark the credential as rejected so the console UI surfaces it.
     await connectionsCol

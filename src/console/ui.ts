@@ -832,36 +832,7 @@ function wireConnection(div, c) {
   loadKeys(div, c.id);
 
   div.querySelector('[data-act="test"]').addEventListener("click", async () => {
-    const btn = div.querySelector('[data-act="test"]');
-    div.querySelectorAll(".test-result, .positions-panel").forEach((n) => n.remove());
-    try {
-      const resp = await withLoading(btn, "Testing…", async () => {
-        const r = await fetch("/console/api/connections/" + c.id + "/test", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + currentToken },
-        });
-        return { ok: r.ok, data: await r.json() };
-      });
-      renderTestResult(div, resp.data, resp.ok);
-      updateConnectionBadge(div, resp.ok ? "valid" : "rejected", c);
-      // Enable / disable the Positions button to reflect the new state.
-      const posBtn = div.querySelector('[data-act="positions"]');
-      if (posBtn) {
-        if (resp.ok) {
-          posBtn.removeAttribute("disabled");
-          posBtn.title = "Fetch portfolio snapshot — proves the runtime path end-to-end";
-          c.credential_status = "valid";
-        } else {
-          posBtn.setAttribute("disabled", "");
-          posBtn.title = "Test the connection first to enable";
-          c.credential_status = "rejected";
-        }
-      }
-      if (resp.ok) toast("Authenticated", "ok");
-    } catch (err) {
-      renderTestResult(div, { error: err.message }, false);
-      toast("Test failed", "bad");
-    }
+    await runTest(div, c);
   });
 
   div.querySelector('[data-act="positions"]').addEventListener("click", async () => {
@@ -1048,6 +1019,87 @@ function updateConnectionBadge(div, status, c) {
   // Find + replace the second badge (status). Mode badge stays.
   const badges = meta.querySelectorAll(".badge");
   if (badges.length >= 2) badges[1].outerHTML = badge("status", status, { ...c, credential_checked_at: new Date().toISOString() });
+}
+
+async function runTest(div, c, emailCode = null) {
+  const btn = div.querySelector('[data-act="test"]');
+  div.querySelectorAll(".test-result, .positions-panel").forEach((n) => n.remove());
+  try {
+    const resp = await withLoading(btn, emailCode ? "Verifying…" : "Testing…", async () => {
+      const r = await fetch("/console/api/connections/" + c.id + "/test", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + currentToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(emailCode ? { email_code: emailCode } : {}),
+      });
+      return { status: r.status, ok: r.ok, data: await r.json() };
+    });
+
+    // 202 + EMAIL_VERIFICATION_REQUIRED → ask the user, then retry.
+    if (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
+      const code = await promptEmailVerificationCode(c);
+      if (!code) {
+        renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
+        return;
+      }
+      // Recurse with the code — same UI flow, just supplying the
+      // emailCode to the next /test call.
+      await runTest(div, c, code);
+      return;
+    }
+
+    renderTestResult(div, resp.data, resp.ok);
+    updateConnectionBadge(div, resp.ok ? "valid" : "rejected", c);
+    const posBtn = div.querySelector('[data-act="positions"]');
+    if (posBtn) {
+      if (resp.ok) {
+        posBtn.removeAttribute("disabled");
+        posBtn.title = "Fetch portfolio snapshot — proves the runtime path end-to-end";
+        c.credential_status = "valid";
+      } else {
+        posBtn.setAttribute("disabled", "");
+        posBtn.title = "Test the connection first to enable";
+        c.credential_status = "rejected";
+      }
+    }
+    if (resp.ok) toast("Authenticated", "ok");
+  } catch (err) {
+    renderTestResult(div, { error: err.message }, false);
+    toast("Test failed", "bad");
+  }
+}
+
+async function promptEmailVerificationCode(c) {
+  return openModal({
+    title: "IBKR verification code",
+    body: () => ({
+      html: \`
+        <p style="margin-top:0;">
+          IBKR sent a 6-digit verification code to the account email
+          (because they saw a new device — that's our headless browser).
+          Check your inbox and paste the code below.
+        </p>
+        <p class="muted" style="font-size:12px;">
+          Code is valid for a few minutes. If it's expired, click Cancel,
+          wait for a new email, and Test again.
+        </p>
+        <label class="field-label">Verification code</label>
+        <input id="ev-code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits" />
+      \`,
+    }),
+    primary: {
+      label: "Submit",
+      loadingLabel: "Submitting…",
+      onClick: async (m) => {
+        const code = m.querySelector("#ev-code").value.trim();
+        if (!/^\\d{4,8}$/.test(code)) return "Code must be 4–8 digits.";
+        return code; // resolve with the raw code; outer logic retries Test.
+      },
+    },
+    secondary: { label: "Cancel" },
+  });
 }
 
 function renderTestResult(div, data, ok) {

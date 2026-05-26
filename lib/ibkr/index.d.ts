@@ -34,6 +34,13 @@ export interface SignInOptions {
   mode?: "paper" | "live";
   headed?: boolean;
   totpSecret?: string | null;
+  /**
+   * 6-digit "Temporary Security Code" IBKR emails when our headless
+   * Chromium looks like a new device. Required to complete sign-in
+   * when that challenge fires; null/omitted on subsequent sign-ins
+   * once the device is trusted.
+   */
+  emailCode?: string | null;
   onProgress?: (msg: string) => void;
   debugDir?: string;
 }
@@ -149,4 +156,14 @@ export class IbkrError extends Error {
   status?: number;
   body?: unknown;
   constructor(message: string, opts?: { stage?: string; status?: number; body?: unknown });
+}
+
+/**
+ * Thrown from IbkrClient.signIn when IBKR shows the "Temporary Security
+ * Code" challenge for a new device and no emailCode was supplied. The
+ * caller should prompt the user, then re-call signIn with emailCode.
+ */
+export class EmailVerificationRequiredError extends Error {
+  code: "EMAIL_VERIFICATION_REQUIRED";
+  constructor();
 }

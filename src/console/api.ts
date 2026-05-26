@@ -15,7 +15,7 @@ import {
   destroyCredential,
 } from "../secrets.js";
 import { generateApiKey } from "../apikeys.js";
-import { withClient, CredentialRejectedError } from "../connection.js";
+import { withClient, CredentialRejectedError, EmailVerificationNeededError } from "../connection.js";
 import { logError } from "../logging.js";
 import { errorsCol } from "../firestore.js";
 
@@ -199,13 +199,30 @@ consoleApi.post("/connections/:id/test", async (req, res) => {
   const conn = await loadOwnedConnection(req, res);
   if (!conn) return;
 
+  // Optional verification code for IBKR's new-device challenge. The UI
+  // POSTs it on retry after the previous Test surfaced the prompt.
+  const body = (req.body ?? {}) as { email_code?: string };
+  const emailCode = typeof body.email_code === "string" ? body.email_code.trim() : null;
+
   try {
-    const accounts = await withClient(conn.id, async (client) => client.getAccounts());
+    const accounts = await withClient(
+      conn.id,
+      async (client) => client.getAccounts(),
+      { emailCode },
+    );
     res.json({
       ok: true,
       ibkr_accounts: accounts.map((a) => (a.accountId ?? a.id) as string),
     });
   } catch (err) {
+    if (err instanceof EmailVerificationNeededError) {
+      res.status(202).json({
+        ok: false,
+        code: "EMAIL_VERIFICATION_REQUIRED",
+        error: "IBKR sent a verification code to the account email. Paste it and retry.",
+      });
+      return;
+    }
     if (err instanceof CredentialRejectedError) {
       res.status(400).json({
         ok: false,
@@ -231,6 +248,14 @@ consoleApi.get("/connections/:id/positions", async (req, res) => {
     const snapshot = await withClient(conn.id, async (client) => client.getPositions());
     res.json({ ok: true, snapshot });
   } catch (err) {
+    if (err instanceof EmailVerificationNeededError) {
+      res.status(202).json({
+        ok: false,
+        code: "EMAIL_VERIFICATION_REQUIRED",
+        error: "IBKR sent a verification code to the account email. Test the connection and paste the code.",
+      });
+      return;
+    }
     if (err instanceof CredentialRejectedError) {
       res.status(400).json({ ok: false, code: "CREDENTIAL_REJECTED", error: err.message });
       return;
