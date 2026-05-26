@@ -760,7 +760,7 @@ function renderConnection(c) {
       </div>
       <div class="row actions">
         <button data-act="test">Test</button>
-        <button class="ghost" data-act="rotate">Rotate credentials</button>
+        <button class="ghost" data-act="rotate">Update credentials</button>
         <button class="danger" data-act="delete">Delete</button>
       </div>
     </div>
@@ -816,7 +816,7 @@ function wireConnection(div, c) {
 
   div.querySelector('[data-act="rotate"]').addEventListener("click", async () => {
     const ok = await openModal({
-      title: "Rotate credentials — " + (c.label || c.id),
+      title: "Update credentials — " + (c.label || c.id),
       body: () => ({
         html: \`
           <p class="muted" style="margin-top:0">
