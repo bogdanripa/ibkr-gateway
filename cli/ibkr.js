@@ -22,6 +22,8 @@ import { exit } from 'node:process';
 import { IbkrClient } from '../lib/ibkr/index.js';
 import { loadState, saveState, clearState, sessionPath } from './lib/session-file.js';
 import { ask, askPassword, yesNo, menu, closePrompts } from './lib/prompt.js';
+import { Progress } from './lib/progress.js';
+import { humanError } from './lib/errors.js';
 
 // ----- formatting helpers --------------------------------------------
 
@@ -69,10 +71,7 @@ const CASH_COLS = [
 async function safe(fn) {
   try { return await fn(); }
   catch (e) {
-    console.error('✗ ' + (e?.message || e));
-    if (e?.stage === 'no-account-selected') {
-      console.error('  → use Accounts → Set current account');
-    }
+    console.error('✗ ' + humanError(e));
   }
 }
 
@@ -93,20 +92,24 @@ async function promptSignIn(client) {
 
   const headed = await yesNo('Open browser visibly (needed for IBKey 2FA push)?');
 
-  const result = await client.signIn({
-    username, password, mode, headed,
-    onProgress: (m) => process.stderr.write(`  · ${m}\n`),
-  });
+  const p = new Progress();
+  let result;
+  try {
+    result = await client.signIn({
+      username, password, mode, headed,
+      onProgress: (m) => p.step(m),
+    });
+  } catch (e) {
+    p.fail('sign-in failed: ' + humanError(e));
+    throw e;
+  }
   await saveState(client.getState());
-  console.log(`\n✓ signed in (mode=${mode}, user=${result.userName ?? username}, id=${result.userId ?? '?'})`);
-  console.log(`  state saved to ${sessionPath()}`);
-  if (result.brokerage.state === 'ok') {
-    console.log(`  brokerage: authenticated=${result.brokerage.authenticated} connected=${result.brokerage.connected}`);
-  } else {
-    console.log(`  brokerage: unavailable (${result.brokerage.error})`);
+  p.succeed(`signed in as ${result.userName ?? username} (mode=${mode})`);
+  if (result.brokerage.state !== 'ok') {
+    console.log(`  brokerage: unavailable (${humanError({ message: result.brokerage.error })})`);
   }
   if (result.isPendingApplicant) {
-    console.log('  ⚠ account is in PENDING-APPLICATION state — portfolio/order endpoints will 500.');
+    console.log('  ⚠ account is in PENDING-APPLICATION state — most data endpoints will be empty.');
   }
   if (result.accounts.length > 1) {
     console.log(`  ${result.accounts.length} accounts found; using ${client.getCurrentAccount() || '(none yet — pick one)'}`);
@@ -226,22 +229,25 @@ async function placeOrder(client) {
     `  TIF=${tif}  outsideRTH=${outsideRth}`);
   if (!(await yesNo('Place this order?'))) return;
 
-  await safe(async () => {
+  const p = new Progress();
+  try {
     await client.ensureBrokerage();
     const result = await client.placeOrder({
       symbol, side, quantity, orderType,
       limitPrice, stopPrice, tif, outsideRth,
       onConfirm: async ({ message }) => {
+        p.clear();
         console.log('\nIBKR confirmation prompt:');
         for (const line of message.split('\n')) console.log('  ' + line);
         return yesNo('confirm');
       },
-      onProgress: (m) => process.stderr.write(`  · ${m}\n`),
+      onProgress: (m) => p.step(m),
     });
-    console.log('');
-    console.log(`✓ order chain completed (${result.length} response row${result.length === 1 ? '' : 's'}):`);
-    for (const r of result) console.log('  ' + JSON.stringify(r));
-  });
+    p.succeed(`order placed (${result.length} response row${result.length === 1 ? '' : 's'})`);
+    for (const r of result) console.log('   ' + JSON.stringify(r));
+  } catch (e) {
+    p.fail(humanError(e));
+  }
 }
 
 // ----- quote ----------------------------------------------------------
@@ -272,11 +278,15 @@ async function pickSecurity(client) {
   if (list.length === 1) return list[0];
 
   console.log('');
-  const shown = list.slice(0, 20);
+  // Defend against null rows / null section entries — IBKR sometimes
+  // returns sparse arrays for less-common security types.
+  const shown = list.filter(Boolean).slice(0, 20);
   shown.forEach((r, i) => {
-    const sectypes = [...new Set((r.sections || []).map((s) => s.secType))].filter(Boolean).join(',');
-    const sym = (r.symbol || '?').padEnd(8);
-    const desc = (r.description || '').padEnd(40);
+    const sectypes = [...new Set(
+      (r.sections || []).filter(Boolean).map((s) => s && s.secType).filter(Boolean),
+    )].join(',');
+    const sym = String(r.symbol || '?').padEnd(8);
+    const desc = String(r.description || '').padEnd(40);
     console.log(`  ${String(i + 1).padStart(2)}. ${sym} ${desc} ${sectypes}`);
   });
   if (list.length > shown.length) console.log(`  (… and ${list.length - shown.length} more)`);
@@ -384,12 +394,10 @@ async function accountsMenu(client) {
     const c = await menu(`Accounts (current=${current})`, [
       { key: '1', label: 'List accounts' },
       { key: '2', label: 'Set current account' },
-      { key: '3', label: 'Unset current account' },
       { key: '0', label: 'Back' },
     ]);
     if (c === '1') await listAccounts(client);
     else if (c === '2') await setCurrentAccount(client);
-    else if (c === '3') { client.unsetCurrentAccount(); console.log('cleared'); }
     else if (c === '0' || c === '') return;
     else console.log(`(unknown choice '${c}')`);
     await saveState(client.getState());
