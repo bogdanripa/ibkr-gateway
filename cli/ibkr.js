@@ -153,8 +153,21 @@ async function showPortfolio(client) {
     printTable('Stocks', data.stocks, STOCK_COLS);
     printTable('Options', data.options, OPT_COLS);
     for (const [k, rows] of Object.entries(data.other)) printTable(k, rows, STOCK_COLS);
-    printTable('Cash (ledger)',
-      data.cash.filter((r) => Number(r.cash) || Number(r.netLiq)), CASH_COLS);
+    // /portfolio/{id}/ledger always emits a synthetic "BASE" row that
+    // sums every real currency into the account's base currency. For a
+    // single-currency account it duplicates that currency exactly, so
+    // drop it. For multi-currency accounts keep it but relabel it as
+    // "TOTAL" so users know what it is.
+    const realCcys = data.cash.filter((r) => r.ccy !== 'BASE'
+      && (Number(r.cash) || Number(r.netLiq)));
+    const baseRow = data.cash.find((r) => r.ccy === 'BASE');
+    const cashRows = realCcys.length > 1 && baseRow
+      ? [...realCcys, { ...baseRow, ccy: 'TOTAL' }]
+      : realCcys;
+    printTable('Cash (ledger)', cashRows, CASH_COLS);
+    if (cashRows.some((r) => r.ccy === 'TOTAL')) {
+      console.log('  (TOTAL = all currencies summed in the account base currency.)');
+    }
     if (data.errors.positions) console.log(`\n  · positions endpoint: ${data.errors.positions}`);
     if (data.errors.cash) console.log(`  · cash endpoint: ${data.errors.cash}`);
     if (!data.stocks.length && !data.options.length && !data.cash.length && !Object.keys(data.errors).length) {
