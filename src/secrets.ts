@@ -13,9 +13,19 @@ import { config } from "./config.js";
 
 const client = new SecretManagerServiceClient();
 
+export type IbkrMode = "paper" | "live";
+
 export interface IbkrCredential {
   username: string;
   password: string;
+  /** "paper" | "live" — selects the IBKR /sso/Login mode toggle. */
+  mode: IbkrMode;
+  /**
+   * IBKR "Authenticator App" activation code (base32 TOTP secret).
+   * Required for `mode: "live"` so the gateway can re-auth unattended;
+   * MUST be absent for paper (paper accounts have no 2FA).
+   */
+  totp_secret?: string;
 }
 
 const PARENT = () => `projects/${config.projectId}`;
@@ -87,11 +97,22 @@ export async function fetchCredential(
   const json = Buffer.isBuffer(data)
     ? data.toString("utf8")
     : Buffer.from(data).toString("utf8");
-  const parsed = JSON.parse(json) as IbkrCredential;
+  const parsed = JSON.parse(json) as Partial<IbkrCredential>;
   if (!parsed.username || !parsed.password) {
     throw new Error("Secret payload missing username/password");
   }
-  return parsed;
+  // Legacy payloads created before the mode field existed get treated
+  // as paper (the only safe default — they could not have had TOTP).
+  const mode: IbkrMode = parsed.mode === "live" ? "live" : "paper";
+  if (mode === "live" && !parsed.totp_secret) {
+    throw new Error("Secret payload missing totp_secret for live mode");
+  }
+  return {
+    username: parsed.username,
+    password: parsed.password,
+    mode,
+    totp_secret: mode === "live" ? parsed.totp_secret : undefined,
+  };
 }
 
 /**

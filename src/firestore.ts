@@ -27,10 +27,20 @@ export interface AccountDoc {
 
 export type CredentialStatus = "unknown" | "valid" | "rejected";
 
+export type IbkrMode = "paper" | "live";
+
 export interface ConnectionDoc {
   account_id: string;
   ibkr_account_id: string | null;
   label: string | null;
+  /**
+   * "paper" | "live". Determines which IBKR /sso/Login toggle the
+   * gateway flips when re-authing. Immutable after connection
+   * creation — to switch modes you delete the connection and create
+   * a new one (the credentials, IBKR account, and audit history are
+   * all different between live and paper).
+   */
+  mode: IbkrMode;
   created_at: Timestamp;
   ibkr_credential_ref: string;
   credential_status: CredentialStatus;

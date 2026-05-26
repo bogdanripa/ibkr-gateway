@@ -203,17 +203,40 @@ function renderDashboard(me, connections) {
 
     <h2>Add a connection</h2>
     <div class="card">
-      <p class="muted" style="margin-top:0">
-        Use a 2FA-free secondary IBKR username. Your primary login keeps its
-        2FA. See SPEC §9.1 for the steps if you haven't created a secondary
-        username yet.
-      </p>
+      <label>Mode</label>
+      <div class="row" id="add-mode-row" style="gap:16px;align-items:center;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:normal;color:var(--fg);margin:0;">
+          <input type="radio" name="add-mode" value="paper" checked /> Paper
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-weight:normal;color:var(--fg);margin:0;">
+          <input type="radio" name="add-mode" value="live" /> Live
+        </label>
+        <span class="muted" style="margin-left:auto;font-size:12px;">
+          <a href="/help/paper-account" target="_blank">paper?</a>
+          &nbsp;·&nbsp;
+          <a href="/help/authenticator-app" target="_blank">live?</a>
+        </span>
+      </div>
+
       <label>Label (your reference)</label>
       <input id="add-label" placeholder="paper account" />
       <label>IBKR username</label>
       <input id="add-username" autocomplete="off" />
       <label>IBKR password</label>
       <input id="add-password" type="password" autocomplete="new-password" />
+
+      <div id="add-totp-wrap" style="display:none;">
+        <label>Authenticator App activation code</label>
+        <input id="add-totp" type="password" autocomplete="off"
+               placeholder="base32 secret IBKR showed at enrollment" />
+        <p class="muted" style="margin:4px 0 0;font-size:12px;">
+          The activation code (the base32 secret, not a 6-digit code)
+          IBKR showed you when you enrolled
+          <a href="/help/authenticator-app" target="_blank">Authenticator App</a>.
+          Required for unattended live re-auth. Stored in GCP Secret Manager.
+        </p>
+      </div>
+
       <div style="margin-top:12px"><button id="add-btn">Create connection</button></div>
       <div id="add-err" class="err"></div>
     </div>
@@ -233,17 +256,41 @@ function renderDashboard(me, connections) {
     }
   }
 
+  // Show/hide the activation-code field as the mode toggles.
+  const totpWrap = document.getElementById("add-totp-wrap");
+  const totpInput = document.getElementById("add-totp");
+  const syncTotpVisibility = () => {
+    const mode = document.querySelector('input[name="add-mode"]:checked').value;
+    totpWrap.style.display = mode === "live" ? "" : "none";
+    if (mode !== "live") totpInput.value = "";
+  };
+  for (const r of document.querySelectorAll('input[name="add-mode"]')) {
+    r.addEventListener("change", syncTotpVisibility);
+  }
+  syncTotpVisibility();
+
   document.getElementById("add-btn").addEventListener("click", async () => {
     const errEl = document.getElementById("add-err");
     errEl.textContent = "";
+    const mode = document.querySelector('input[name="add-mode"]:checked').value;
     const body = {
       label: document.getElementById("add-label").value || null,
+      mode,
       ibkr_username: document.getElementById("add-username").value,
       ibkr_password: document.getElementById("add-password").value,
     };
     if (!body.ibkr_username || !body.ibkr_password) {
       errEl.textContent = "username and password are required";
       return;
+    }
+    if (mode === "live") {
+      const totp = totpInput.value.trim();
+      if (!totp) {
+        errEl.textContent =
+          "live mode requires the Authenticator App activation code (see /help/authenticator-app)";
+        return;
+      }
+      body.ibkr_totp_secret = totp;
     }
     try {
       await api("POST", "/connections", body);
@@ -255,10 +302,14 @@ function renderDashboard(me, connections) {
 }
 
 function renderConnection(c) {
+  const modeBadge = c.mode === "live"
+    ? '<span class="badge bad">live</span>'
+    : '<span class="badge">paper</span>';
   return \`
     <div class="conn-head">
       <div>
         <span class="conn-title">\${escapeHtml(c.label || "(no label)")}</span>
+        \${modeBadge}
         \${badge(c.credential_status)}
       </div>
       <div class="row" style="gap:8px">
@@ -317,8 +368,16 @@ function wireConnection(div, c) {
     if (!username) return;
     const password = prompt("IBKR password:");
     if (!password) return;
+    const body = { ibkr_username: username, ibkr_password: password };
+    if (c.mode === "live") {
+      const totp = prompt(
+        "Authenticator App activation code (the base32 secret, not a 6-digit code):"
+      );
+      if (!totp) return;
+      body.ibkr_totp_secret = totp;
+    }
     try {
-      await api("PUT", "/connections/" + c.id + "/credentials", { ibkr_username: username, ibkr_password: password });
+      await api("PUT", "/connections/" + c.id + "/credentials", body);
       alert("Credentials rotated.");
       await renderApp();
     } catch (err) {

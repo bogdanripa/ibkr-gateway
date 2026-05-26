@@ -24,11 +24,13 @@ const SECRET_SENTINEL = `pw_${randomUUID()}_${randomUUID()}`;
 const cred1: IbkrCredential = {
   username: "test-user-1",
   password: SECRET_SENTINEL,
+  mode: "paper",
 };
 
 const cred2: IbkrCredential = {
   username: "test-user-1",
   password: `${SECRET_SENTINEL}-rotated`,
+  mode: "paper",
 };
 
 // Intercept all console output. Anything written here is searched for the

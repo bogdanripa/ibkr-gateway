@@ -52,10 +52,10 @@ async function main() {
 
   const exists = await credentialExists(connectionId);
   if (exists) {
-    await updateCredential(connectionId, { username, password });
+    await updateCredential(connectionId, { username, password, mode: "paper" });
     console.log(`Rotated credential for connection ${connectionId}`);
   } else {
-    const ref = await createCredential(connectionId, { username, password });
+    const ref = await createCredential(connectionId, { username, password, mode: "paper" });
     // If the Firestore doc's stored ref differs from the actual created ref,
     // update the doc so they agree.
     if (doc.get("ibkr_credential_ref") !== ref) {

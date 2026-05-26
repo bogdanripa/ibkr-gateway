@@ -52,6 +52,7 @@ async function main() {
       account_id: accountId,
       ibkr_account_id: null,
       label: SEED_LABEL,
+      mode: "paper",
       created_at: FieldValue.serverTimestamp() as never,
       // Placeholder until §11 step 2 wires Secret Manager. The seed's
       // ref points at a not-yet-created secret name; that's fine — the

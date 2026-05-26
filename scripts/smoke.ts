@@ -78,6 +78,7 @@ async function main() {
       account_id: accountId,
       ibkr_account_id: null,
       label: TAG,
+      mode: "paper",
       created_at: FieldValue.serverTimestamp() as unknown as ConnectionDoc["created_at"],
       ibkr_credential_ref: "smoke-ref",
       credential_status: "unknown",
@@ -120,7 +121,7 @@ async function main() {
 
     // 7. Secret Manager round-trip (smoke-only — does not store a real cred).
     await step("secret manager create + delete", async () => {
-      const sentinel = { username: TAG, password: `pw-${randomUUID()}` };
+      const sentinel = { username: TAG, password: `pw-${randomUUID()}`, mode: "paper" as const };
       await createCredential(connectionId, sentinel);
       const exists = await credentialExists(connectionId);
       if (!exists) throw new Error("secret missing after create");
