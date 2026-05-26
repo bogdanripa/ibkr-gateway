@@ -14,6 +14,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { authenticatorAppHtml } from "../src/help/authenticator-app.js";
+import { contactHtml } from "../src/help/contact.js";
+import { contactThanksHtml } from "../src/help/contact-thanks.js";
 import { mcpHelpHtml } from "../src/help/mcp.js";
 import { paperAccountHtml } from "../src/help/paper-account.js";
 import { privacyHtml } from "../src/help/privacy.js";
@@ -32,6 +34,8 @@ const pages: Array<{ path: string; html: string }> = [
   { path: "help/mcp.html", html: mcpHelpHtml() },
   { path: "terms.html", html: termsHtml() },
   { path: "privacy.html", html: privacyHtml() },
+  { path: "contact.html", html: contactHtml() },
+  { path: "contact-thanks.html", html: contactThanksHtml() },
 ];
 
 for (const { path, html } of pages) {

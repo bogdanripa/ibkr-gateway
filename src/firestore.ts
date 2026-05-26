@@ -15,6 +15,7 @@ export const COL = {
   oauthClients: "ibkr_oauth_clients",
   oauthCodes: "ibkr_oauth_codes",
   oauthTokens: "ibkr_oauth_tokens",
+  contactMessages: "ibkr_contact_messages",
 } as const;
 
 // ---------- Document shapes (§6) ----------
@@ -163,6 +164,22 @@ export interface OAuthTokenDoc {
   revoked_at: Timestamp | null;
 }
 
+/**
+ * Public contact-form submissions. Written by POST /contact/submit
+ * (no auth — anyone on the internet can submit). Read manually in
+ * the Firebase console; no UI surface for them. Includes IP +
+ * user-agent for follow-up forensics if a submission turns out to
+ * be abuse.
+ */
+export interface ContactMessageDoc {
+  ts: Timestamp;
+  name: string;
+  email: string;
+  message: string;
+  ip: string | null;
+  user_agent: string | null;
+}
+
 // ---------- Typed collection accessors ----------
 export const accountsCol = db.collection(COL.accounts) as FirebaseFirestore.CollectionReference<AccountDoc>;
 export const connectionsCol = db.collection(COL.connections) as FirebaseFirestore.CollectionReference<ConnectionDoc>;
@@ -171,6 +188,7 @@ export const errorsCol = db.collection(COL.errors) as FirebaseFirestore.Collecti
 export const oauthClientsCol = db.collection(COL.oauthClients) as FirebaseFirestore.CollectionReference<OAuthClientDoc>;
 export const oauthCodesCol = db.collection(COL.oauthCodes) as FirebaseFirestore.CollectionReference<OAuthCodeDoc>;
 export const oauthTokensCol = db.collection(COL.oauthTokens) as FirebaseFirestore.CollectionReference<OAuthTokenDoc>;
+export const contactMessagesCol = db.collection(COL.contactMessages) as FirebaseFirestore.CollectionReference<ContactMessageDoc>;
 
 /** Path to a connection's single session doc. */
 export function sessionDocRef(connectionId: string): FirebaseFirestore.DocumentReference<SessionDoc> {

@@ -139,10 +139,10 @@ export function privacyHtml(): string {
     panel in the console.
   </li>
   <li>
-    Request full account deletion by emailing
-    <a href="mailto:ibkr.marketplace@bogdanripa.com">ibkr.marketplace@bogdanripa.com</a>.
-    We will remove your account record, all your connections, all
-    your OAuth records, and all Secret Manager entries tied to them.
+    Request full account deletion via the
+    <a href="/contact">contact form</a>. We will remove your account
+    record, all your connections, all your OAuth records, and all
+    Secret Manager entries tied to them.
   </li>
 </ul>
 
@@ -171,8 +171,8 @@ export function privacyHtml(): string {
 
 <h2>10. Contact</h2>
 <p>
-  Questions or deletion requests:
-  <a href="mailto:ibkr.marketplace@bogdanripa.com">ibkr.marketplace@bogdanripa.com</a>.
+  Questions or deletion requests: use the
+  <a href="/contact">contact form</a>.
 </p>
 
 <p class="muted">

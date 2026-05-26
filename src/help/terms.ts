@@ -126,7 +126,8 @@ export function termsHtml(): string {
 
 <h2>9. Contact</h2>
 <p>
-  Questions about these Terms: <a href="mailto:ibkr.marketplace@bogdanripa.com">ibkr.marketplace@bogdanripa.com</a>.
+  Questions about these Terms? Reach us through the
+  <a href="/contact">contact form</a>.
 </p>
 
 <p class="muted">

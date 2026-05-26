@@ -12,6 +12,9 @@ import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
+import { contact } from "./contact.js";
+import { contactHtml } from "./help/contact.js";
+import { contactThanksHtml } from "./help/contact-thanks.js";
 import { homeHtml } from "./home.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
@@ -36,6 +39,10 @@ app.use("/", oauth);
 // MCP server (accepts OAuth Bearer or legacy ibkr_ API key; see src/mcp.ts).
 app.use("/mcp", mcp);
 
+// Public contact form — POST /contact/submit. Writes to Firestore
+// (ibkr_contact_messages) and redirects to /contact/thanks.
+app.use("/", contact);
+
 // Public marketing pages (homepage + /help/*) are pre-rendered to
 // static HTML by `npm run build` (see scripts/build-static.ts). Serve
 // them straight from disk so a GET / is a single file read. The
@@ -59,6 +66,12 @@ app.get("/terms", (_req, res) => {
 });
 app.get("/privacy", (_req, res) => {
   res.type("html").send(privacyHtml());
+});
+app.get("/contact", (_req, res) => {
+  res.type("html").send(contactHtml());
+});
+app.get("/contact-thanks", (_req, res) => {
+  res.type("html").send(contactThanksHtml());
 });
 
 app.get("/", (_req, res) => {

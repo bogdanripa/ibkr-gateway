@@ -61,6 +61,34 @@ const HELP_CONTENT_CSS = `
   main hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
   main .muted { color: var(--muted); font-size: 13px; }
 
+  /* Form primitives — used by /contact and any future help-shaped form. */
+  main .field { margin: 16px 0; }
+  main .field label {
+    display: block; font-size: 13px; color: var(--muted);
+    margin-bottom: 6px;
+  }
+  main .field input, main .field textarea {
+    width: 100%; background: #1a1f25; color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+  }
+  main .field input:focus, main .field textarea:focus {
+    outline: none; border-color: var(--accent);
+  }
+  main .field textarea { min-height: 160px; resize: vertical; }
+  main button.primary {
+    background: var(--accent); color: #fff;
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 11px 20px;
+    font: inherit; font-weight: 500; cursor: pointer;
+  }
+  main button.primary:hover { filter: brightness(1.1); }
+  main .honeypot {
+    position: absolute; left: -9999px; top: -9999px;
+    width: 1px; height: 1px; overflow: hidden;
+  }
+
   @media (max-width: 720px) {
     main { padding: 0 16px 24px; margin-top: 20px; }
     main h1 { font-size: 26px; }

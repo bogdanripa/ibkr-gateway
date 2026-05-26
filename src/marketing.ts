@@ -215,6 +215,7 @@ export function marketingFooterHtml(): string {
     <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>
   </div>
   <div class="links">
+    <a href="/contact">Contact</a>
     <a href="/terms">Terms of Use</a>
     <a href="/privacy">Privacy Policy</a>
   </div>
