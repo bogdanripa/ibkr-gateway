@@ -21,6 +21,8 @@
 
 import { config } from "./config.js";
 
+const REPO_URL = "https://github.com/bogdanripa/ibkr-gateway";
+
 export function homeHtml(): string {
   const origin = config.publicOrigin;
   const title = "IBKR Gateway — Connect Claude, Cursor & MCP clients to Interactive Brokers";
@@ -257,6 +259,7 @@ export function homeHtml(): string {
   <div class="brand">IBKR Gateway</div>
   <nav>
     <a href="/help/mcp">Docs</a>
+    <a href="${escapeHtml(REPO_URL)}" target="_blank" rel="noopener">GitHub</a>
     <a href="/help/paper-account">Paper accounts</a>
     <a href="/help/authenticator-app">Live setup</a>
     <a class="cta" href="/console">Sign in</a>
@@ -428,6 +431,49 @@ export function homeHtml(): string {
   </p>
 </section>
 
+<section aria-labelledby="selfhost-h">
+  <h2 id="selfhost-h">Don't want to share your IBKR credentials with us? Run your own.</h2>
+  <p>
+    The hosted instance at <code>${escapeHtml(origin)}</code> stores
+    your IBKR username + password (and Authenticator App secret, for
+    live) in Google Cloud Secret Manager under our project. If you'd
+    rather keep that custody to yourself, the gateway is fully
+    open-source and self-hostable — same code, same MCP surface, same
+    OAuth flow, just running on your own infrastructure.
+  </p>
+  <ul>
+    <li>
+      The repo is at
+      <a href="${escapeHtml(REPO_URL)}" target="_blank" rel="noopener">
+        github.com/bogdanripa/ibkr-gateway</a>.
+    </li>
+    <li>
+      <a href="${escapeHtml(REPO_URL)}#readme" target="_blank" rel="noopener">README</a>
+      walks through a single-VM GCP deployment end-to-end: Firestore,
+      Secret Manager, the systemd unit, Caddy + TLS, Firebase Auth, the
+      GitHub Actions deploy workflow.
+    </li>
+    <li>
+      Stack: Node 22 + Express + Firestore + GCP Secret Manager +
+      Playwright (for IBKR's headless login). No proprietary
+      dependencies, no licence wall.
+    </li>
+    <li>
+      The cost on the reference deployment is roughly a single
+      <code>e2-small</code> VM ($15-ish/month) plus a free-tier
+      Firestore database.
+    </li>
+  </ul>
+  <p class="muted">
+    Either way, IBKR sees the same Client Portal traffic — the only
+    difference is who holds the keys to the secret store.
+  </p>
+  <div class="actions">
+    <a class="btn ghost" href="${escapeHtml(REPO_URL)}" target="_blank" rel="noopener">View on GitHub</a>
+    <a class="btn ghost" href="${escapeHtml(REPO_URL)}#readme" target="_blank" rel="noopener">Read the deploy guide</a>
+  </div>
+</section>
+
 <section aria-labelledby="security-h">
   <h2 id="security-h">Security model</h2>
   <ul>
@@ -497,9 +543,14 @@ export function homeHtml(): string {
   <details>
     <summary>Can I host my own instance?</summary>
     <p>
-      Yes. The repo is plain Node + Express + Firestore + Secret
-      Manager; deploy/deploy-on-vm.sh handles a single-VM install. The
-      docs live in the help pages.
+      Yes — fork
+      <a href="${escapeHtml(REPO_URL)}" target="_blank" rel="noopener">the repo on GitHub</a>
+      and follow the
+      <a href="${escapeHtml(REPO_URL)}#readme" target="_blank" rel="noopener">README</a>.
+      It documents a single-VM GCP deployment (Firestore, Secret
+      Manager, systemd, Caddy + TLS, Firebase Auth, GitHub Actions).
+      If you'd rather not share your IBKR credentials with the hosted
+      instance, self-hosting is the answer.
     </p>
   </details>
 

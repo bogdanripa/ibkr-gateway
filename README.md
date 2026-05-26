@@ -1,14 +1,32 @@
-# IBKR Gateway Broker
+# IBKR Gateway
 
-A self-hosted multi-tenant proxy in front of Interactive Brokers'
-[Client Portal Gateway][cpg]. Each connected IBKR account gets its own
-isolated [IBeam][ibeam]-wrapped Gateway process; a single uniform HTTPS API
-in front of them is authenticated with per-connection bearer keys.
+> **Just want to use it?** There's a free hosted instance at
+> **<https://ibkr-gateway.bogdanripa.com>** — sign in with Google, add
+> an IBKR connection, point Claude (or any MCP-compatible host) at
+> `/mcp`. No deploy, no setup. The marketing/landing page has the full
+> walkthrough.
+>
+> **This README** is for the other path: running the gateway yourself
+> so your IBKR credentials never leave your own GCP project. It covers
+> the single-VM deployment that powers the hosted instance — Firestore,
+> Secret Manager, Caddy + TLS, Firebase Auth, GitHub Actions deploy.
+
+---
+
+A bridge that exposes your Interactive Brokers account as a
+[Model Context Protocol][mcp] server, so AI tools like Claude and Cursor
+can query positions, snap quotes, and (with explicit consent) place
+orders. Built on Interactive Brokers' [Client Portal Web API][cpg];
+hosts authenticate via OAuth 2.1 (PKCE + dynamic client registration)
+and get tokens scoped to a single IBKR connection and a single scope
+(read or read+write).
 
 > **See [`SPEC.md`](./SPEC.md)** for the full design, the IBKR-side
 > constraints that motivate it, and the rationale for every non-obvious
 > choice (credential custody, Firestore, Firebase Auth, etc.). This README
 > is the *how* (deploy + run), not the *why*.
+
+[mcp]: https://modelcontextprotocol.io
 
 [cpg]: https://www.interactivebrokers.com/en/trading/ib-api.php#client-portal-api
 [ibeam]: https://github.com/Voyz/ibeam
