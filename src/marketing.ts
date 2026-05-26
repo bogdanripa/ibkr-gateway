@@ -214,6 +214,10 @@ export function marketingFooterHtml(): string {
     <a href="/console">Console</a>
     <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>
   </div>
+  <div class="links">
+    <a href="/terms">Terms of Use</a>
+    <a href="/privacy">Privacy Policy</a>
+  </div>
   <p>
     IBKR Gateway is an independent project. Not affiliated with
     Interactive Brokers.

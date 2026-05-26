@@ -16,6 +16,8 @@ import { homeHtml } from "./home.js";
 import { paperAccountHtml } from "./help/paper-account.js";
 import { authenticatorAppHtml } from "./help/authenticator-app.js";
 import { mcpHelpHtml } from "./help/mcp.js";
+import { privacyHtml } from "./help/privacy.js";
+import { termsHtml } from "./help/terms.js";
 import { mcp } from "./mcp.js";
 import { oauth } from "./oauth.js";
 
@@ -51,6 +53,13 @@ app.get("/help/mcp", (_req, res) => {
   res.type("html").send(mcpHelpHtml());
 });
 app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
+
+app.get("/terms", (_req, res) => {
+  res.type("html").send(termsHtml());
+});
+app.get("/privacy", (_req, res) => {
+  res.type("html").send(privacyHtml());
+});
 
 app.get("/", (_req, res) => {
   res.type("html").send(homeHtml(config.publicOrigin));

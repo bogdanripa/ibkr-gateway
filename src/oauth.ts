@@ -634,6 +634,12 @@ ${FAVICON_LINK}
     padding: 16px; text-align: center;
   }
   a { color: var(--accent); }
+  .legal {
+    margin-top: 20px; text-align: center;
+    color: var(--muted); font-size: 12px;
+  }
+  .legal a { color: var(--muted); text-decoration: none; margin: 0 6px; }
+  .legal a:hover { color: var(--text); text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -648,6 +654,11 @@ ${FAVICON_LINK}
     <div id="content"></div>
   </div>
 </div>
+<p class="legal">
+  By approving you agree to the
+  <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and
+  <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+</p>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";

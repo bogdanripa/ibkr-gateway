@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import { authenticatorAppHtml } from "../src/help/authenticator-app.js";
 import { mcpHelpHtml } from "../src/help/mcp.js";
 import { paperAccountHtml } from "../src/help/paper-account.js";
+import { privacyHtml } from "../src/help/privacy.js";
+import { termsHtml } from "../src/help/terms.js";
 import { homeHtml } from "../src/home.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,6 +30,8 @@ const pages: Array<{ path: string; html: string }> = [
   { path: "help/paper-account.html", html: paperAccountHtml() },
   { path: "help/authenticator-app.html", html: authenticatorAppHtml() },
   { path: "help/mcp.html", html: mcpHelpHtml() },
+  { path: "terms.html", html: termsHtml() },
+  { path: "privacy.html", html: privacyHtml() },
 ];
 
 for (const { path, html } of pages) {
