@@ -258,8 +258,23 @@ async function cancelOrder(client) {
 }
 
 async function placeOrder(client) {
-  const symbol = (await ask('Symbol (e.g. AAPL): ')).toUpperCase();
-  if (!symbol) return;
+  // The brokerage tier has to be up before we can run secdef/search.
+  try { await client.ensureBrokerage(); }
+  catch (e) { console.error('✗ ' + humanError(e)); return; }
+
+  // Use the same pick flow as Quote so the user explicitly disambiguates
+  // tickers like MSFT (NASDAQ vs TSE-CDR vs MEXI vs EBS) instead of us
+  // silently picking the first STK match.
+  const sec = await pickSecurity(client);
+  if (!sec) return;
+  // Enrich with currency / listing exchange so the review block is
+  // unambiguous (best-effort).
+  let info = {};
+  try { info = await client.getSecurityInfo(sec.conid); } catch { /* ignore */ }
+  const ccy = info.currency || sec.currency || '';
+  const exch = info.listingExchange || '';
+  const tickerLabel = sec.symbol + (exch ? ` (${exch}${ccy ? `, ${ccy}` : ''})` : '');
+
   const side = (await ask('Side [BUY/SELL]: ')).toUpperCase();
   if (!['BUY', 'SELL'].includes(side)) { console.error('invalid side'); return; }
   const quantity = Number(await ask('Quantity: '));
@@ -267,26 +282,32 @@ async function placeOrder(client) {
   const orderType = (await ask('Order type [MKT/LMT/STP/STP_LIMIT] (default MKT): ')).toUpperCase() || 'MKT';
   let limitPrice, stopPrice;
   if (/^LMT|STP_LIMIT$/i.test(orderType)) {
-    limitPrice = Number(await ask('Limit price: '));
+    limitPrice = Number(await ask(`Limit price${ccy ? ` (${ccy})` : ''}: `));
     if (!limitPrice) { console.error('limit price required'); return; }
   }
   if (/^STP/i.test(orderType) && orderType !== 'STP_LIMIT') {
-    stopPrice = Number(await ask('Stop price: '));
+    stopPrice = Number(await ask(`Stop price${ccy ? ` (${ccy})` : ''}: `));
     if (!stopPrice) { console.error('stop price required'); return; }
   }
   const tif = (await ask('TIF [DAY/GTC/IOC/OPG] (default DAY): ')).toUpperCase() || 'DAY';
   const outsideRth = await yesNo('Allow execution outside regular trading hours?');
 
-  console.log(`\nReview: ${side} ${quantity} ${symbol} ${orderType}` +
-    (limitPrice ? ` @ ${limitPrice}` : '') + (stopPrice ? ` stop=${stopPrice}` : '') +
-    `  TIF=${tif}  outsideRTH=${outsideRth}`);
+  console.log('');
+  console.log('── Review ──');
+  printRecord([
+    ['Security',  `${tickerLabel}  ·  ${sec.description}  (conid ${sec.conid})`],
+    ['Side',      side],
+    ['Quantity',  String(quantity)],
+    ['Type',      orderType + (limitPrice != null ? ` @ ${limitPrice}` : '') + (stopPrice != null ? ` stop ${stopPrice}` : '')],
+    ['TIF',       tif],
+    ['Outside RTH', outsideRth ? 'yes' : 'no'],
+  ]);
   if (!(await yesNo('Place this order?'))) return;
 
   const p = new Progress();
   try {
-    await client.ensureBrokerage();
     const result = await client.placeOrder({
-      symbol, side, quantity, orderType,
+      conid: sec.conid, side, quantity, orderType,
       limitPrice, stopPrice, tif, outsideRth,
       onConfirm: async ({ message }) => {
         p.clear();
@@ -296,7 +317,7 @@ async function placeOrder(client) {
       },
       onProgress: (m) => p.step(m),
     });
-    const desc = orderSummary({ side, quantity, symbol, orderType, limitPrice, stopPrice, tif, outsideRth });
+    const desc = orderSummary({ side, quantity, symbol: tickerLabel, orderType, limitPrice, stopPrice, tif, outsideRth });
     p.succeed('order placed');
     for (const r of result) printOrderResultRow(r, desc);
   } catch (e) {
