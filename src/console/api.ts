@@ -219,7 +219,10 @@ consoleApi.post("/connections/:id/test", async (req, res) => {
       res.status(202).json({
         ok: false,
         code: "EMAIL_VERIFICATION_REQUIRED",
-        error: "IBKR sent a verification code to the account email. Paste it and retry.",
+        previous_rejected: err.previousRejected,
+        error: err.previousRejected
+          ? "IBKR rejected the previous code. Paste the FRESH email IBKR just sent and try again."
+          : "IBKR sent a verification code to the account email. Paste it and retry.",
       });
       return;
     }

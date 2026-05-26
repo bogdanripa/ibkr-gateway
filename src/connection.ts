@@ -35,10 +35,16 @@ import { IbkrClient, IbkrError, EmailVerificationRequiredError, type IbkrClientS
 import { logError } from "./logging.js";
 
 export class EmailVerificationNeededError extends Error {
-  constructor(public readonly connectionId: string) {
+  constructor(
+    public readonly connectionId: string,
+    /** True if a previous code was just rejected — UI should hint that
+     *  the user needs the *fresh* email IBKR just sent, not an old one. */
+    public readonly previousRejected: boolean = false,
+  ) {
     super(
-      `IBKR sent a new-device verification code to the account email for ${connectionId}. ` +
-      `Retry with the 6-digit code from the email.`,
+      previousRejected
+        ? `IBKR rejected the verification token for ${connectionId}. The previous code was wrong or expired — request a fresh one.`
+        : `IBKR sent a new-device verification code to the account email for ${connectionId}. Retry with the 6-digit code from the email.`,
     );
     this.name = "EmailVerificationNeededError";
   }
@@ -168,7 +174,11 @@ async function signInFresh(
     // a one-time verification step before completing the sign-in.
     if (e instanceof EmailVerificationRequiredError) {
       cred = null; // drop plaintext before throwing across the boundary
-      throw new EmailVerificationNeededError(connectionId);
+      // The flag lives on the error instance — propagate so the UI
+      // can render "previous code rejected, paste the FRESH one".
+      const previousRejected =
+        (e as Error & { previousRejected?: boolean }).previousRejected === true;
+      throw new EmailVerificationNeededError(connectionId, previousRejected);
     }
     const msg = e instanceof Error ? e.message : String(e);
     // Mark the credential as rejected so the console UI surfaces it.

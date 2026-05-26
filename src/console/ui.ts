@@ -1039,7 +1039,9 @@ async function runTest(div, c, emailCode = null) {
 
     // 202 + EMAIL_VERIFICATION_REQUIRED → ask the user, then retry.
     if (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
-      const result = await promptEmailVerificationCode(c);
+      const result = await promptEmailVerificationCode(c, {
+        previousRejected: !!resp.data?.previous_rejected,
+      });
       const code = result && typeof result === "object" ? result.code : null;
       if (!code) {
         renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
@@ -1072,19 +1074,30 @@ async function runTest(div, c, emailCode = null) {
   }
 }
 
-async function promptEmailVerificationCode(c) {
+async function promptEmailVerificationCode(c, { previousRejected = false } = {}) {
+  const intro = previousRejected
+    ? \`<p style="margin-top:0; color: var(--danger);">
+         <strong>IBKR rejected the previous code.</strong>
+       </p>
+       <p style="margin-top:0;">
+         IBKR just sent a <em>fresh</em> email with a new code.
+         Check your inbox for the most recent one and paste it below.
+       </p>\`
+    : \`<p style="margin-top:0;">
+         IBKR sent a 6-digit verification code to the account email
+         (because they saw a new device — that's our headless browser).
+         Check your inbox and paste the code below.
+       </p>\`;
+
   return openModal({
     title: "IBKR verification code",
     body: () => ({
       html: \`
-        <p style="margin-top:0;">
-          IBKR sent a 6-digit verification code to the account email
-          (because they saw a new device — that's our headless browser).
-          Check your inbox and paste the code below.
-        </p>
+        \${intro}
         <p class="muted" style="font-size:12px;">
-          Code is valid for a few minutes. If it's expired, click Cancel,
-          wait for a new email, and Test again.
+          Each Test attempt makes IBKR send a new email and invalidates
+          the previous code. If unsure, use the <strong>latest</strong>
+          one only.
         </p>
         <label class="field-label">Verification code</label>
         <input id="ev-code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits" />
