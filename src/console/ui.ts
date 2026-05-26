@@ -110,7 +110,16 @@ export function consoleHtml(): string {
 </header>
 
 <main id="app">
-  <div class="signin"><button id="signin-btn">Sign in with Google</button></div>
+  <div class="signin">
+    <div style="text-align:center;">
+      <button id="signin-btn">Sign in with Google</button>
+      <p style="margin-top:24px;color:var(--muted);font-size:13px;">
+        First time here? Read
+        <a href="/help/paper-account" style="color:var(--accent);">how paper accounts work</a>
+        before connecting.
+      </p>
+    </div>
+  </div>
 </main>
 
 <script type="module">

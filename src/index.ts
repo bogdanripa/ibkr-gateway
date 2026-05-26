@@ -1,6 +1,7 @@
 // Entry point. v1 wires up the Express app:
 //   /console/api/*   — Firebase-authenticated console backend (api.ts)
 //   /console         — single-page UI (ui.ts)
+//   /help/*          — public static help pages (no auth)
 //   /healthz         — already served by Caddy ahead of us, but kept here
 //                      for direct localhost checks
 //
@@ -11,12 +12,20 @@ import express from "express";
 import { config } from "./config.js";
 import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
+import { paperAccountHtml } from "./help/paper-account.js";
 
 const app = express();
 app.disable("x-powered-by");
 
 // Console API.
 app.use("/console/api", consoleApi);
+
+// Public help pages (must be registered BEFORE the /* fallback that
+// serves the SPA, otherwise the SPA would shadow them).
+app.get("/help/paper-account", (_req, res) => {
+  res.type("html").send(paperAccountHtml());
+});
+app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
 
 // Console UI: serve the single HTML on / and on /console*.
 app.get(["/", "/console", "/console/*splat"], (_req, res) => {
