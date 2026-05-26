@@ -19,15 +19,19 @@ SVC="ibkr-gateway"
 
 log() { echo "==> $*"; }
 
-# 1. Node.js (LTS 20). Idempotent — skip if already installed and >=20.
+# 1. Node.js (LTS 22). Idempotent — skip if already installed and >=22.
+#
+# NB: undici@8 (used by lib/ibkr/client.js) calls webidl.util.markAsUncloneable
+# which only exists from Node 22 onwards. The previous Node 20 install was
+# fine before we wired in the IBKR client; do NOT downgrade.
 need_node=1
 if command -v node >/dev/null 2>&1; then
   major=$(node -p 'process.versions.node.split(".")[0]')
-  if [[ "$major" -ge 20 ]]; then need_node=0; fi
+  if [[ "$major" -ge 22 ]]; then need_node=0; fi
 fi
 if [[ "$need_node" -eq 1 ]]; then
-  log "installing Node.js 20 LTS"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  log "installing Node.js 22 LTS"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get -qq install -y nodejs
 fi
 
