@@ -17,8 +17,6 @@
     "test:secrets": "node --env-file-if-exists=.env node_modules/.bin/tsx scripts/test-secrets.ts",
     "test": "npm run typecheck && npm run scan && npm run smoke && npm run smoke:http",
     "upload-credential": "node --env-file-if-exists=.env node_modules/.bin/tsx scripts/upload-credential.ts",
-    "test:gateway": "node --env-file-if-exists=.env node_modules/.bin/tsx scripts/test-gateway.ts",
-    "reap": "node --env-file-if-exists=.env node_modules/.bin/tsx scripts/reap-gateway.ts",
     "scan": "bash scripts/scan-secrets.sh",
     "typecheck": "tsc --noEmit -p ."
   },

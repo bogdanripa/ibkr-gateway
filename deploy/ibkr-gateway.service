@@ -1,9 +1,8 @@
 [Unit]
-Description=IBKR Gateway broker (proxy + supervisor)
+Description=IBKR Gateway broker (stateless Node service)
 Documentation=https://github.com/bogdanripa/ibkr-gateway
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=simple
@@ -14,7 +13,8 @@ ExecStart=/usr/bin/npx tsx src/index.ts
 Restart=on-failure
 RestartSec=5
 
-# Hardening (modest; we need network + docker socket access).
+# Hardening (modest; we still need outbound HTTPS to IBKR + GCP, and
+# Playwright spawns a headless Chromium subprocess during signIn).
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true

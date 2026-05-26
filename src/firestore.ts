@@ -57,7 +57,33 @@ export interface ApiKeyDoc {
   revoked_at: Timestamp | null;
 }
 
+/**
+ * Per-connection IBKR session blob. Lives in the
+ *   ibkr_connections/{id}/session/state
+ * subcollection so the listing read on /console/api/connections
+ * doesn't pull in the (~5–10 KB) session bytes on every page load.
+ *
+ * The `state` field is the exact shape returned by
+ * `IbkrClient.getState()` in lib/ibkr/. Storing it as an opaque
+ * JSON-compatible map (Firestore handles nested objects natively)
+ * keeps Firestore schema decoupled from the client's evolution.
+ */
+export interface SessionDoc {
+  state: Record<string, unknown>;
+  updated_at: Timestamp;
+  last_tickle_at: Timestamp | null;
+  last_tickle_ok: boolean;
+}
+
 // ---------- Typed collection accessors ----------
 export const accountsCol = db.collection(COL.accounts) as FirebaseFirestore.CollectionReference<AccountDoc>;
 export const connectionsCol = db.collection(COL.connections) as FirebaseFirestore.CollectionReference<ConnectionDoc>;
 export const apiKeysCol = db.collection(COL.apiKeys) as FirebaseFirestore.CollectionReference<ApiKeyDoc>;
+
+/** Path to a connection's single session doc. */
+export function sessionDocRef(connectionId: string): FirebaseFirestore.DocumentReference<SessionDoc> {
+  return connectionsCol
+    .doc(connectionId)
+    .collection("session")
+    .doc("state") as FirebaseFirestore.DocumentReference<SessionDoc>;
+}

@@ -15,13 +15,7 @@ import {
   destroyCredential,
 } from "../secrets.js";
 import { generateApiKey } from "../apikeys.js";
-import { config } from "../config.js";
-import {
-  spawnGateway,
-  reapGateway,
-  fetchPortfolioAccountIds,
-} from "../gateway.js";
-import { IbkrError } from "../errors.js";
+import { withClient, CredentialRejectedError } from "../connection.js";
 
 export const consoleApi = Router();
 consoleApi.use(requireFirebaseAuth);
@@ -194,77 +188,31 @@ consoleApi.delete("/connections/:id", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Test connection — spawn the Gateway and report the auth outcome.
+// Test connection — sign in (or reuse the saved session) and confirm IBKR
+// accepts us. No Docker, no IBeam — uses the stateless connection layer
+// in src/connection.ts which is the same path /v1/api/* will use.
 // ---------------------------------------------------------------------------
-//
-// This is a transient spawn: we start IBeam, wait for authenticated, capture
-// the IBKR account id, and reap the container. It is NOT how a real
-// trading session will be opened (that's the Supervisor in §11 step 4).
-// Per-connection in-process mutex so two parallel /test calls can't
-// race and step on each other.
-
-const testLocks = new Map<string, Promise<unknown>>();
 
 consoleApi.post("/connections/:id/test", async (req, res) => {
   const conn = await loadOwnedConnection(req, res);
   if (!conn) return;
 
-  // Coalesce concurrent requests for the same connection — only one
-  // spawn at a time.
-  const inflight = testLocks.get(conn.id);
-  if (inflight) {
-    res.status(409).json({ error: "a test is already in progress for this connection" });
-    return;
-  }
-
-  const work = (async () => {
-    const port = config.gatewayPortMin; // v1: single port; Supervisor will allocate properly
-    try {
-      const handle = await spawnGateway(conn.id, port);
-      const ibkrAccounts = (await fetchPortfolioAccountIds(handle)) ?? [];
-
-      // Update the connection: credential is valid, and we now know the
-      // IBKR account id (if portfolio call succeeded).
-      const update: Record<string, unknown> = {
-        credential_status: "valid",
-        credential_checked_at: FieldValue.serverTimestamp(),
-      };
-      if (ibkrAccounts.length === 1) {
-        update.ibkr_account_id = ibkrAccounts[0];
-      }
-      await connectionsCol.doc(conn.id).update(update);
-
-      return {
-        ok: true,
-        ibkr_accounts: ibkrAccounts,
-      };
-    } catch (err) {
-      // Friendly IBKR errors (2FA, credential rejected) — mark the credential
-      // as rejected and pass the structured payload to the client.
-      if (err instanceof IbkrError) {
-        await connectionsCol.doc(conn.id).update({
-          credential_status: "rejected",
-          credential_checked_at: FieldValue.serverTimestamp(),
-        });
-        return { ok: false, ...err.toResponse() };
-      }
-      throw err;
-    } finally {
-      // Always reap — this is a transient test, not a persistent session.
-      await reapGateway(conn.id).catch(() => undefined);
-    }
-  })();
-
-  testLocks.set(conn.id, work);
   try {
-    const result = await work;
-    if ((result as { ok: boolean }).ok) {
-      res.json(result);
-    } else {
-      res.status(400).json(result);
+    const accounts = await withClient(conn.id, async (client) => client.getAccounts());
+    res.json({
+      ok: true,
+      ibkr_accounts: accounts.map((a) => (a.accountId ?? a.id) as string),
+    });
+  } catch (err) {
+    if (err instanceof CredentialRejectedError) {
+      res.status(400).json({
+        ok: false,
+        code: "CREDENTIAL_REJECTED",
+        error: err.message,
+      });
+      return;
     }
-  } finally {
-    testLocks.delete(conn.id);
+    throw err;
   }
 });
 

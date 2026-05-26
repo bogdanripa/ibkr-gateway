@@ -34,6 +34,23 @@ fi
 node --version
 npm --version
 
+# 1b. Playwright/Chromium prerequisites.
+#
+# The gateway's signIn path launches a headless Chromium via
+# lib/ibkr/browser-login.js. We need the Debian/Ubuntu shared libs
+# Chromium dynamically links against. Run on every deploy — apt is
+# idempotent and the cost is ~1s when nothing is missing. The actual
+# Chromium binary is downloaded by `npx playwright install` after the
+# npm install below.
+log "ensuring Playwright system dependencies are installed"
+sudo apt-get -qq update
+sudo apt-get -qq install -y \
+  ca-certificates fonts-liberation libnss3 libatk1.0-0 \
+  libatk-bridge2.0-0 libcups2 libxkbcommon0 libxcomposite1 \
+  libxrandr2 libgbm1 libpango-1.0-0 libasound2 \
+  libxdamage1 libxfixes3 libdrm2 || \
+  sudo apt-get -qq install -y libasound2t64 || true
+
 # 2. Extract new source.
 if [[ ! -f "$TARBALL" ]]; then
   echo "missing $TARBALL — aborting" >&2
@@ -46,6 +63,9 @@ sudo rm -f "$TARBALL"
 
 log "installing dependencies"
 ( cd "$NEW_DIR" && sudo npm ci --omit=dev=false --no-audit --no-fund )
+
+log "ensuring Playwright Chromium is installed"
+( cd "$NEW_DIR" && sudo npx --yes playwright install chromium )
 
 # 3. Atomic swap.
 if [[ -d "$APP_DIR" ]]; then
