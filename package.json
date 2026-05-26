@@ -8,7 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p . && tsx scripts/build-static.ts",
+    "build:static": "tsx scripts/build-static.ts",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "seed": "node --env-file-if-exists=.env node_modules/.bin/tsx scripts/seed.ts",

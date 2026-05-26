@@ -68,6 +68,9 @@ sudo rm -f "$TARBALL"
 log "installing dependencies"
 ( cd "$NEW_DIR" && sudo npm ci --omit=dev=false --no-audit --no-fund )
 
+log "pre-rendering marketing pages to dist/public/"
+( cd "$NEW_DIR" && sudo npm run build:static )
+
 log "ensuring Playwright Chromium + headless-shell are installed"
 # Playwright 1.49+ split the headless shell out of full Chromium; in
 # headless mode (the default) it spawns chrome-headless-shell, which

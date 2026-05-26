@@ -7,6 +7,8 @@
 //                      for direct localhost checks
 
 import express from "express";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { consoleApi } from "./console/api.js";
 import { consoleHtml } from "./console/ui.js";
@@ -16,6 +18,8 @@ import { authenticatorAppHtml } from "./help/authenticator-app.js";
 import { mcpHelpHtml } from "./help/mcp.js";
 import { mcp } from "./mcp.js";
 import { oauth } from "./oauth.js";
+
+const STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist", "public");
 
 const app = express();
 app.disable("x-powered-by");
@@ -30,8 +34,13 @@ app.use("/", oauth);
 // MCP server (accepts OAuth Bearer or legacy ibkr_ API key; see src/mcp.ts).
 app.use("/mcp", mcp);
 
-// Public help pages (must be registered BEFORE the /* fallback that
-// serves the SPA, otherwise the SPA would shadow them).
+// Public marketing pages (homepage + /help/*) are pre-rendered to
+// static HTML by `npm run build` (see scripts/build-static.ts). Serve
+// them straight from disk so a GET / is a single file read. The
+// dynamic handlers below only fire as a fallback for dev — they let
+// `npm run dev` work without running the static build first.
+app.use(express.static(STATIC_DIR, { extensions: ["html"], index: "index.html" }));
+
 app.get("/help/paper-account", (_req, res) => {
   res.type("html").send(paperAccountHtml());
 });
@@ -43,10 +52,8 @@ app.get("/help/mcp", (_req, res) => {
 });
 app.get("/help", (_req, res) => res.redirect("/help/paper-account"));
 
-// Public marketing homepage — plain HTML, no JS, no auth. Visitors who
-// click "Sign in" land in /console which boots the SPA.
 app.get("/", (_req, res) => {
-  res.type("html").send(homeHtml());
+  res.type("html").send(homeHtml(config.publicOrigin));
 });
 
 // Console SPA — single HTML on /console*.

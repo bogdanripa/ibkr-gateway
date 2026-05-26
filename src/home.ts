@@ -19,7 +19,6 @@
 //   · OpenGraph + Twitter cards.
 //   · `<link rel="canonical">` and a stable robots policy.
 
-import { config } from "./config.js";
 import {
   MARKETING_CHROME_CSS,
   REPO_URL,
@@ -27,8 +26,7 @@ import {
   marketingHeaderHtml,
 } from "./marketing.js";
 
-export function homeHtml(): string {
-  const origin = config.publicOrigin;
+export function homeHtml(origin: string): string {
   const title = "IBKR Gateway — Connect Claude, Cursor & MCP clients to Interactive Brokers";
   const description =
     "IBKR Gateway is an open bridge that turns your Interactive Brokers account into an MCP (Model Context Protocol) endpoint. Plug Claude, Cursor, or any MCP-compatible AI host into IBKR with OAuth — read-only for analysis, read & write for trading. Free, hosted, scoped per app.";
