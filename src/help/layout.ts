@@ -7,6 +7,7 @@
 // callouts — content-level concerns the homepage doesn't need.
 
 import {
+  FAVICON_LINK,
   MARKETING_CHROME_CSS,
   marketingFooterHtml,
   marketingHeaderHtml,
@@ -79,6 +80,7 @@ export function renderHelpPage(page: HelpPage): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${page.title} — IBKR Gateway</title>
 <meta name="robots" content="index, follow" />
+${FAVICON_LINK}
 <style>
 ${MARKETING_CHROME_CSS}
 ${HELP_CONTENT_CSS}

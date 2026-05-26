@@ -59,6 +59,7 @@ import {
   type OAuthTokenDoc,
 } from "./firestore.js";
 import { logError } from "./logging.js";
+import { FAVICON_LINK, marketingLogoSvg } from "./marketing.js";
 
 const CODE_TTL_SECONDS = 60;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -571,8 +572,9 @@ function consentPageHtml(p: AuthorizeParams, clientName: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Authorize ${escapeHtml(clientName)}</title>
+<title>Authorize ${escapeHtml(clientName)} — IBKR Gateway</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+${FAVICON_LINK}
 <style>
   :root {
     --bg: #0b0d10; --card: #14181d; --border: #2a3038;
@@ -581,10 +583,22 @@ function consentPageHtml(p: AuthorizeParams, clientName: string): string {
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    margin: 0; min-height: 100vh; background:
+      radial-gradient(800px 400px at 50% -10%, rgba(91, 141, 239, 0.18), transparent 60%),
+      var(--bg);
+    color: var(--text);
     font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    display: grid; place-items: center; padding: 32px 20px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 20px;
   }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-bottom: 24px;
+    font-weight: 600; font-size: 16px; letter-spacing: 0.02em;
+    color: var(--text); text-decoration: none;
+  }
+  .brand .logo { display: block; flex-shrink: 0; }
+  .card-wrap { width: 100%; max-width: 460px; display: flex; justify-content: center; }
   .card {
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
     padding: 28px; max-width: 460px; width: 100%;
@@ -623,10 +637,16 @@ function consentPageHtml(p: AuthorizeParams, clientName: string): string {
 </style>
 </head>
 <body>
-<div class="card" id="card">
-  <h1>Authorize access</h1>
-  <p class="muted" id="intro">Loading…</p>
-  <div id="content"></div>
+<a class="brand" href="/">
+  ${marketingLogoSvg(28)}
+  <span>IBKR Gateway</span>
+</a>
+<div class="card-wrap">
+  <div class="card" id="card">
+    <h1>Authorize access</h1>
+    <p class="muted" id="intro">Loading…</p>
+    <div id="content"></div>
+  </div>
 </div>
 
 <script type="module">

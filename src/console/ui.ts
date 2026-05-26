@@ -12,6 +12,7 @@
 //   · Button labels are Title Case for consistency.
 
 import { firebaseConfig } from "./firebase-config.js";
+import { FAVICON_LINK, marketingLogoSvg } from "../marketing.js";
 
 export function consoleHtml(): string {
   return `<!doctype html>
@@ -20,6 +21,7 @@ export function consoleHtml(): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>IBKR Gateway — Console</title>
+${FAVICON_LINK}
 <style>
   :root {
     --bg: #0e0f12;
@@ -59,6 +61,11 @@ export function consoleHtml(): string {
     align-items: center;
     background: var(--bg-elev);
   }
+  header .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    color: var(--fg); text-decoration: none;
+  }
+  header .brand .logo { display: block; flex-shrink: 0; }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   header .who { color: var(--muted); font-size: 13px; display: flex; gap: 12px; align-items: center; }
 
@@ -341,7 +348,10 @@ export function consoleHtml(): string {
 <body>
 
 <header>
-  <h1>IBKR Gateway</h1>
+  <a class="brand" href="/">
+    ${marketingLogoSvg(26)}
+    <h1>IBKR Gateway</h1>
+  </a>
   <div class="who" id="who"></div>
 </header>
 

@@ -6,9 +6,9 @@ import { renderHelpPage } from "./layout.js";
 
 export function mcpHelpHtml(): string {
   return renderHelpPage({
-    title: "Connect Claude / Cursor (MCP)",
+    title: "Connect Claude / ChatGPT / Cursor (MCP)",
     bodyHtml: `
-<h1>Connect Claude, Cursor, or any MCP host to your IBKR account</h1>
+<h1>Connect Claude, ChatGPT, Cursor, or any MCP host to your IBKR account</h1>
 
 <p>
   IBKR Gateway exposes an
@@ -16,9 +16,9 @@ export function mcpHelpHtml(): string {
   (Model Context Protocol) server at
   <code>https://ibkr-gateway.bogdanripa.com/mcp</code>.
   Any MCP-compatible host — Claude.ai's Custom Connectors, Claude
-  Desktop, Cursor, your own scripts — can use it to query positions,
-  pull quotes, and (with your explicit consent) place orders against
-  one of your IBKR connections.
+  Desktop, ChatGPT's Custom Connectors, Cursor, your own scripts —
+  can use it to query positions, pull quotes, and (with your explicit
+  consent) place orders against one of your IBKR connections.
 </p>
 
 <div class="ok">
@@ -55,6 +55,36 @@ export function mcpHelpHtml(): string {
     or <em>"get a quote for NVDA"</em>.
   </li>
 </ol>
+
+<h2>Connect from ChatGPT</h2>
+<ol class="steps">
+  <li class="step">
+    <strong>Set up an IBKR connection first</strong> (same as above).
+  </li>
+  <li class="step">
+    <strong>In ChatGPT, open Settings → Connectors → Create.</strong>
+    Pick "Custom connector" / "MCP server" (the label varies by
+    plan). Paste
+    <code>https://ibkr-gateway.bogdanripa.com/mcp</code> as the
+    server URL.
+  </li>
+  <li class="step">
+    <strong>Authorize.</strong> ChatGPT opens this site's consent
+    screen, you sign in with Google, pick the IBKR connection and
+    the scope (read-only or read &amp; write), and approve.
+  </li>
+  <li class="step">
+    <strong>Use the tools.</strong> The IBKR tools show up under
+    the connector — ask ChatGPT to <em>"check my IBKR portfolio"</em>
+    or <em>"quote SPY"</em>.
+  </li>
+</ol>
+<p class="muted">
+  MCP-over-HTTP for custom connectors is only available on
+  ChatGPT plans that expose the connector / agent features
+  (Business, Enterprise, Edu, and Pro at the time of writing).
+  If you don't see the "Create" option, your plan may not have it.
+</p>
 
 <h2>Connect from Claude Desktop</h2>
 <p>

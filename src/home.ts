@@ -20,6 +20,7 @@
 //   · `<link rel="canonical">` and a stable robots policy.
 
 import {
+  FAVICON_LINK,
   MARKETING_CHROME_CSS,
   REPO_URL,
   marketingFooterHtml,
@@ -27,9 +28,9 @@ import {
 } from "./marketing.js";
 
 export function homeHtml(origin: string): string {
-  const title = "IBKR Gateway — Connect Claude, Cursor & MCP clients to Interactive Brokers";
+  const title = "IBKR Gateway — Connect Claude, ChatGPT, Cursor & MCP clients to Interactive Brokers";
   const description =
-    "IBKR Gateway is an open bridge that turns your Interactive Brokers account into an MCP (Model Context Protocol) endpoint. Plug Claude, Cursor, or any MCP-compatible AI host into IBKR with OAuth — read-only for analysis, read & write for trading. Free, hosted, scoped per app.";
+    "IBKR Gateway is an open bridge that turns your Interactive Brokers account into an MCP (Model Context Protocol) endpoint. Plug Claude, ChatGPT, Cursor, or any MCP-compatible AI host into IBKR with OAuth — read-only for analysis, read & write for trading. Free, hosted, scoped per app.";
   const jsonLd = JSON.stringify(
     [
       {
@@ -66,7 +67,7 @@ export function homeHtml(origin: string): string {
             acceptedAnswer: {
               "@type": "Answer",
               text:
-                "IBKR Gateway is a free hosted service that exposes your Interactive Brokers account through the Model Context Protocol so AI tools like Claude and Cursor can query positions, fetch quotes, and (with your consent) place orders.",
+                "IBKR Gateway is a free hosted service that exposes your Interactive Brokers account through the Model Context Protocol so AI tools like Claude, ChatGPT, and Cursor can query positions, fetch quotes, and (with your consent) place orders.",
             },
           },
           {
@@ -80,11 +81,11 @@ export function homeHtml(origin: string): string {
           },
           {
             "@type": "Question",
-            name: "Can Claude place trades on my IBKR account?",
+            name: "Can Claude or ChatGPT place trades on my IBKR account?",
             acceptedAnswer: {
               "@type": "Answer",
               text:
-                "Only if you explicitly grant the read & write scope during the consent flow. With read-only scope, place_order and cancel_order are not even visible in the tools list.",
+                "Only if you explicitly grant the read & write scope during the consent flow. With read-only scope, place_order and cancel_order are not even visible in the tools list — applies equally to Claude, ChatGPT, Cursor, and any other MCP host.",
             },
           },
           {
@@ -121,6 +122,7 @@ export function homeHtml(origin: string): string {
 <meta name="description" content="${escapeHtml(description)}" />
 <link rel="canonical" href="${escapeHtml(origin)}/" />
 <meta name="robots" content="index, follow" />
+${FAVICON_LINK}
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="${escapeHtml(title)}" />
@@ -218,8 +220,8 @@ ${marketingHeaderHtml()}
     IBKR Gateway is a free, hosted bridge that exposes your Interactive
     Brokers account over the
     <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol (MCP)</a>.
-    Plug Claude, Cursor, or any MCP-compatible AI host into IBKR with one
-    consent screen. Read-only by default, read &amp; write only when you
+    Plug Claude, ChatGPT, Cursor, or any MCP-compatible AI host into
+    IBKR with one consent screen. Read-only by default, read &amp; write only when you
     grant it — per app, per connection.
   </p>
   <div class="actions">
@@ -339,6 +341,12 @@ ${marketingHeaderHtml()}
       <h3>Claude Desktop</h3>
       <p>Drop the URL into <code>claude_desktop_config.json</code> under
       <code>mcpServers</code>. Same OAuth dance on first contact.</p>
+    </article>
+    <article class="card">
+      <h3>ChatGPT</h3>
+      <p>Settings → Connectors → Create → paste
+      <code>${escapeHtml(origin)}/mcp</code>. Available on plans that
+      expose custom connectors (Business, Enterprise, Edu, Pro).</p>
     </article>
     <article class="card">
       <h3>Cursor</h3>
@@ -466,12 +474,12 @@ ${marketingHeaderHtml()}
   </details>
 
   <details>
-    <summary>Can Claude actually trade my account?</summary>
+    <summary>Can Claude or ChatGPT actually trade my account?</summary>
     <p>
       Only if you grant the <strong>read &amp; write</strong> scope on
       the consent screen. With read-only, <code>place_order</code> and
-      <code>cancel_order</code> aren't visible to Claude and would be
-      rejected server-side anyway. The toggle is per app.
+      <code>cancel_order</code> aren't visible to the host and would
+      be rejected server-side anyway. The toggle is per app.
     </p>
   </details>
 
@@ -510,10 +518,10 @@ ${marketingHeaderHtml()}
 </section>
 
 <section aria-labelledby="cta-h">
-  <h2 id="cta-h">Ready to wire Claude into your IBKR account?</h2>
+  <h2 id="cta-h">Ready to wire Claude or ChatGPT into your IBKR account?</h2>
   <p>
     Sign in with Google, add a paper or live IBKR connection, then
-    point Claude (or Cursor, or your own MCP client) at
+    point Claude, ChatGPT, Cursor, or your own MCP client at
     <code>${escapeHtml(origin)}/mcp</code>. The consent screen takes
     about ten seconds.
   </p>
