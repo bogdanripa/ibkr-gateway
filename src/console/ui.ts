@@ -584,6 +584,39 @@ function openModal({ title, body, primary, secondary, dismissOnBackdrop = true }
   });
 }
 
+// Borderless "please wait" overlay with a spinner. No buttons, not
+// dismissable from the user side — caller closes it imperatively.
+// Used for the auto-test that runs right after creating a
+// connection (the user can't do anything useful until it finishes).
+function showWaitingModal(title, body) {
+  const root = document.getElementById("modal-root");
+  root.innerHTML = '';
+  const m = document.createElement("div");
+  m.className = "modal";
+  m.innerHTML = \`
+    <div class="modal-head"><h3>\${escapeHtml(title)}</h3></div>
+    <div class="modal-body">
+      <p style="display:flex; align-items:center; gap:12px; margin:0;">
+        <span class="spinner"></span>
+        <span>\${body}</span>
+      </p>
+    </div>
+  \`;
+  root.appendChild(m);
+  root.classList.add("open");
+  return {
+    close() {
+      // Only clear if WE are still the active modal — some other
+      // flow (e.g. the email-verification dialog) may have taken
+      // over the root in the meantime, and we don't want to nuke it.
+      if (root.firstChild === m) {
+        root.classList.remove("open");
+        root.innerHTML = '';
+      }
+    },
+  };
+}
+
 function presentContinuous(verb) {
   // "Delete" → "Deleting…", "Rotate credentials" → "Rotating credentials…",
   // "Generate key" → "Generating key…", "Create connection" → "Creating connection…".
@@ -824,12 +857,28 @@ function renderDashboard(me, connections) {
       const created = await withLoading(addBtn, "Creating connection…", () => api("POST", "/connections", body));
       toast("Connection created", "ok");
       await renderApp();
+      const card = document.querySelector('[data-conn-id="' + created.id + '"]');
       // Surface the auto-generated API key right after re-render so
-      // the user can copy it before navigating away. We find the
-      // freshly-rendered card by connection id.
-      if (created?.default_api_key?.raw_key) {
-        const card = document.querySelector('[data-conn-id="' + created.id + '"]');
-        if (card) showRawKey(card, created.default_api_key.raw_key);
+      // the user can copy it before navigating away.
+      if (card && created?.default_api_key?.raw_key) {
+        showRawKey(card, created.default_api_key.raw_key);
+      }
+      // Auto-test the new credentials. Connections start with
+      // credential_status="unknown", which is hostile UX — the user
+      // doesn't know if their typo just bricked the connection. Run
+      // the same Test we'd run on the button now, and overlay a
+      // friendly "we're testing…" modal while it runs. The modal
+      // dismisses itself the moment the live-mode verify-code dialog
+      // needs to take over, and at the end of the test either way.
+      if (card) {
+        const waiting = showWaitingModal(
+          "Testing your credentials",
+          "Signing in to IBKR with the credentials you just entered. " +
+          "This usually takes 10–20 seconds — stay tuned…",
+        );
+        runTest(card, created, {
+          onPhase: (p) => { if (p === "need-code" || p === "done") waiting.close(); },
+        }).catch(() => waiting.close());
       }
     } catch (err) {
       errEl.textContent = err.message;
@@ -1087,10 +1136,21 @@ function updateConnectionBadge(div, status, c) {
   if (badges.length >= 2) badges[1].outerHTML = badge("status", status, { ...c, credential_checked_at: new Date().toISOString() });
 }
 
-async function runTest(div, c) {
+// runTest(div, c, { onPhase }) — drives the full test+verify loop on
+// the given connection card. onPhase fires at every state change so
+// callers (e.g. the post-create auto-test) can react — closing a
+// "please wait" overlay before the verify-code dialog opens, etc.
+//   phases:
+//     · "testing"   — POST /test in flight
+//     · "need-code" — got 202, about to open the verify modal
+//     · "verifying" — POST /verify in flight
+//     · "done"      — final outcome rendered (success OR failure)
+async function runTest(div, c, opts = {}) {
+  const { onPhase = () => {} } = opts;
   const btn = div.querySelector('[data-act="test"]');
   div.querySelectorAll(".test-result, .positions-panel").forEach((n) => n.remove());
   try {
+    onPhase("testing");
     let resp = await withLoading(btn, "Testing…", async () => {
       const r = await fetch("/console/api/connections/" + c.id + "/test", {
         method: "POST",
@@ -1102,6 +1162,7 @@ async function runTest(div, c) {
     // Drive the verification loop. The gateway keeps the SAME browser
     // session open between requests, so the email token stays valid.
     while (resp.status === 202 && resp.data?.code === "EMAIL_VERIFICATION_REQUIRED") {
+      onPhase("need-code");
       const result = await promptEmailVerificationCode(c, {
         previousRejected: !!resp.data?.previous_rejected,
       });
@@ -1119,6 +1180,7 @@ async function runTest(div, c) {
         renderTestResult(div, { code: "VERIFICATION_CANCELLED", error: "You cancelled — try Test again when ready." }, false);
         return;
       }
+      onPhase("verifying");
       resp = await withLoading(btn, "Verifying…", async () => {
         const r = await fetch("/console/api/connections/" + c.id + "/verify", {
           method: "POST",
@@ -1147,9 +1209,11 @@ async function runTest(div, c) {
       }
     }
     if (resp.ok) toast("Authenticated", "ok");
+    onPhase("done");
   } catch (err) {
     renderTestResult(div, { error: err.message }, false);
     toast("Test failed", "bad");
+    onPhase("done");
   }
 }
 

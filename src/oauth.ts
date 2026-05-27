@@ -629,6 +629,15 @@ ${FAVICON_LINK}
   .bad { color: var(--bad); }
   .ok { color: var(--ok); }
   .signed-as { font-size: 12px; color: var(--muted); margin-top: 16px; }
+  .warn-panel {
+    margin-top: 10px; padding: 10px 12px;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    border-left-width: 3px;
+    border-radius: 6px;
+    font-size: 13px; color: #e6dfb1;
+  }
+  .warn-panel a { color: var(--accent); }
   .empty-state {
     background: #1a1f25; border: 1px dashed var(--border); border-radius: 8px;
     padding: 16px; text-align: center;
@@ -705,7 +714,6 @@ async function renderSignedIn(user) {
     return;
   }
 
-  const valid = info.connections.filter((c) => c.credential_status === "valid");
   if (info.connections.length === 0) {
     content.innerHTML = \`
       <div class="empty-state">
@@ -719,11 +727,14 @@ async function renderSignedIn(user) {
     return;
   }
 
+  // We render ALL connections, even untested/rejected ones — disabling
+  // them in the <select> made the dropdown look broken (the first
+  // option appeared empty). Instead we surface the status inline and
+  // gate Approve from JS based on the picked connection.
   const opts = info.connections.map((c) => {
-    const dis = c.credential_status === "valid" ? "" : " disabled";
-    const tag = c.credential_status === "valid" ? "" : " (" + c.credential_status + ")";
+    const tag = c.credential_status === "valid" ? "" : " · " + c.credential_status;
     const label = (c.label || c.ibkr_account_id || c.id) + " · " + c.mode + tag;
-    return '<option value="' + escapeHtml(c.id) + '"' + dis + '>' + escapeHtml(label) + '</option>';
+    return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(label) + '</option>';
   }).join("");
 
   const requested = CFG.params.scope || "read";
@@ -734,6 +745,7 @@ async function renderSignedIn(user) {
     <div class="field">
       <label class="field-label">Connection</label>
       <select id="conn">\${opts}</select>
+      <div id="conn-warn" class="warn-panel" style="display:none;"></div>
     </div>
     <div class="field">
       <label class="field-label">Access scope</label>
@@ -752,6 +764,50 @@ async function renderSignedIn(user) {
     <p class="signed-as">Signed in as \${escapeHtml(info.email)} · <a id="so" href="#">sign out</a></p>
   \`;
   document.getElementById("so").addEventListener("click", (e) => { e.preventDefault(); signOut(auth); });
+
+  // Inline status panel + Approve gating. When the user picks an
+  // untested or rejected connection we show a yellow warning + link
+  // them to the console (new tab) to run a Test, and a Refresh button
+  // they hit after re-validating so they don't have to re-initiate
+  // the whole OAuth flow from their MCP client.
+  const connSel = document.getElementById("conn");
+  const warnPanel = document.getElementById("conn-warn");
+  const approveBtnEarly = document.getElementById("approve");
+  const byId = Object.fromEntries(info.connections.map((c) => [c.id, c]));
+
+  function syncConnState() {
+    const c = byId[connSel.value];
+    const st = c?.credential_status;
+    if (st === "valid") {
+      warnPanel.style.display = "none";
+      warnPanel.innerHTML = "";
+      approveBtnEarly.disabled = false;
+      return;
+    }
+    const verb = st === "rejected"
+      ? "IBKR rejected the saved credentials for this connection."
+      : "This connection hasn't been tested yet.";
+    const cta = st === "rejected"
+      ? "Open the console, re-enter the credentials, click Test, then come back."
+      : "Open the console, click Test on this connection, then come back.";
+    warnPanel.innerHTML = \`
+      <p style="margin:0 0 8px;">\${escapeHtml(verb)} \${escapeHtml(cta)}</p>
+      <p style="margin:0;">
+        <a href="/console" target="_blank" rel="noopener">Open the console →</a>
+        &nbsp;·&nbsp;
+        <a href="#" id="refresh-conn">Refresh once tested</a>
+      </p>
+    \`;
+    warnPanel.style.display = "";
+    approveBtnEarly.disabled = true;
+    document.getElementById("refresh-conn").addEventListener("click", async (e) => {
+      e.preventDefault();
+      // Re-render the panel from scratch with the latest status.
+      renderSignedIn(user);
+    });
+  }
+  connSel.addEventListener("change", syncConnState);
+  syncConnState();
 
   const approveBtn = document.getElementById("approve");
   const denyBtn = document.getElementById("deny");
